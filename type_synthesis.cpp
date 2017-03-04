@@ -7,60 +7,10 @@
 #include <reflexpr>
 #include <tuple>
 
+#include "refl_utilities.hpp"
+#include "string_literal.hpp"
+
 /* Metaprogramming utilities */
-
-template <char... Pack>
-using char_sequence = std::integer_sequence<char, Pack...>;
-
-template <char...> struct string_literal {};
-
-template <typename charT, charT... Pack>
-constexpr string_literal<Pack...> operator""_s() {
-  return {};
-}
-
-// adapted from http://ldionne.com/2015/11/29/efficient-parameter-pack-indexing/
-template <std::size_t I, char T> struct indexed {
-  constexpr static char value = T;
-};
-
-template <typename Is, char... Ts> struct indexer;
-
-template <std::size_t... Is, char... Ts>
-struct indexer<std::index_sequence<Is...>, Ts...> : indexed<Is, Ts>... {};
-
-template <std::size_t I, char T> constexpr static char select(indexed<I, T>) {
-  return indexed<I, T>::value;
-}
-
-template <std::size_t I, char... Ts> struct nth_char {
-  constexpr static char value =
-      select<I>(indexer<std::make_index_sequence<sizeof...(Ts)>, Ts...>{});
-};
-
-// compare ...Pack to a const char[N]
-template <char... Pack> struct string_ops {
-  template <typename CharArray, std::size_t... i>
-  constexpr static bool equal_helper(std::index_sequence<i...>,
-                                     CharArray &&value) {
-    return ((value[i] == nth_char<i, Pack...>::value) && ...);
-  }
-
-  template <char... ComparePack, std::size_t... i>
-  constexpr static bool equal_helper(std::index_sequence<i...>,
-                                     const string_literal<ComparePack...> &) {
-    if constexpr(sizeof...(ComparePack) != sizeof...(Pack)) {
-      return false;
-    } else {
-      return ((nth_char<i, ComparePack...>::value
-            == nth_char<i, Pack...>::value) && ...);
-    }
-  }
-
-  template <typename CharArray> constexpr static bool equal(CharArray &&value) {
-    return equal_helper(std::make_index_sequence<sizeof...(Pack)>{}, value);
-  }
-};
 
 template <typename KeyT, char... Pack> struct associative_access {
   template <size_t... i>
@@ -178,13 +128,9 @@ template <typename KeyT, typename ValueT> struct labeled_container {
 // base case
 template <typename T> struct synthesized_type {
   using MetaObj = reflexpr(T);
-
-  template <typename... Members>
-  using tuple_helper = std::tuple<
-      std::meta::get_reflected_type_t<std::meta::get_type_m<Members>>...>;
   using tuple_type =
-      std::meta::unpack_sequence_t<std::meta::get_data_members_m<MetaObj>,
-                                   tuple_helper>;
+    std::meta::unpack_sequence_t<std::meta::get_data_members_m<MetaObj>,
+                                 member_pack_as_tuple>;
 
   template <char... Pack> auto &get(string_literal<Pack...> &&p) {
     // delegate
