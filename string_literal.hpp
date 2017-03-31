@@ -7,6 +7,12 @@ constexpr string_literal<Pack...> operator""_s() {
   return {};
 }
 
+// Convert from string_literal to const char
+template<typename charT, charT ...Pack>
+constexpr std::array<charT, sizeof...(Pack)> pack_to_literal() {
+  return {Pack...};
+}
+
 template <char... Pack>
 using char_sequence = std::integer_sequence<char, Pack...>;
 

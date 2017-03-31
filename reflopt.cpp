@@ -1,212 +1,160 @@
 /* Demo: Specify a struct for command line arguments
  * */
 
+// TODO: pare down includes
+#include <boost/hana.hpp>
+
 #include <reflexpr>
 #include <experimental/optional>
 #include <string>
 #include <tuple>
 #include <vector>
+#include <iostream>
 
 #include "refl_utilities.hpp"
 #include "string_literal.hpp"
 
-template<typename ...Types>
-struct reduce_pack {
-  // Find the type in the pack which is non-void
-
-  template <typename Tn, void* ...v>
-  static Tn f(decltype(v)..., Tn, ...);
-
-  using type = decltype(f(std::declval<Types>()...));
-};
+#include <vrm/pp/arg_count.hpp>
+#include <vrm/pp/cat.hpp>
 
 namespace reflopt {
+  namespace hana = boost::hana;
+
   template<typename ...Ts>
   using tuple_t = std::tuple<Ts...>;
 
   template<typename T>
   using optional_t = std::experimental::optional<T>;
 
-  using nullopt_t = std::experimental::nullopt;
+  template<typename KVPairs>
+  constexpr auto map_fold(KVPairs&& kv_pairs) {
+    constexpr auto pair_insert = [](auto&& m, auto&& element) {
+      return m.insert(element[0], element[1]);
+    };
+    return boost::hana::fold(kv_pairs, boost::hana::make_map(), pair_insert);
+  }
 
-  struct flags {
-    template<typename ... Flags>
-    constexpr flags(Flags&&...) noexcept {
-      // TODO
-    }
-  };
+  template<typename OptionsStruct>
+  struct OptionsMap {
+    using MetaOptions = reflexpr(OptionsStruct);
 
-  struct help {
-    constexpr help(const char* s) noexcept : help_string(s) {}
-    const char* help_string;
-  };
+    template<typename Indices, typename ...MetaFields>
+    struct get_prefix_pairs_helper;
 
-  // allowed initializers: +, ?, *, N
-  struct nargs {
-    constexpr nargs(const char* tag) {
-      // TODO
-    }
-
-    constexpr nargs(std::size_t n) {
-      // TODO
-    }
-  };
-
-
-  // but we also want to get the field that matches 
-  /*
-  template<char...Name, typename ...MetaFields>
-  struct has_field {
-    constexpr static bool value = string_ops<Name...>::equal(std::meta::get_base_name_v<MetaFields>) || ...;
-  };
-  */
-
-  template<typename OptionsStruct, typename MemberName, typename ...Args>
-  struct Argument {
-    using MetaObj = reflexpr(OptionsStruct);
+    template<size_t... Indices, typename ...MetaFields>
+    struct get_prefix_pairs_helper<std::index_sequence<Indices...>, MetaFields...> {
+      static constexpr auto filtered_fields = hana::filter(
+          hana::make_tuple(hana::type_c<decl_data_member_type<Indices, MetaFields>::type>...),
+          [](auto&& field){
+            // using T = typename decltype(field)::type;
+            using T = typename std::decay_t<decltype(field)>::type;
+            return has_member<T, decltype("identifier"_s)>::value
+                && has_member<T, decltype("flag"_s)>::value;
+          });
+      static constexpr auto t = hana::fold(filtered_fields,
+        [](auto&& x, auto&& field) {
+          using T = decltype(field);
+          auto result = x.append(hana::make_pair(field.flag, field.identifier));
+          if constexpr(has_member<T, decltype("short_flag"_s)>::value) {
+            result.append(hana::make_pair(field.short_flag, field.identifier));
+          }
+          return result;
+        });
+    };
 
     template<typename ...MetaFields>
-    struct n_fields_helper {
-      constexpr static int value = sizeof...(MetaFields);
+    struct get_prefix_pairs : get_prefix_pairs_helper<std::index_sequence_for<MetaFields...>, MetaFields...> {
     };
 
-    constexpr static std::size_t n_fields = std::meta::unpack_sequence_t<
-      std::meta::get_data_members_m<MetaObj>, n_fields_helper>::value;
+    static constexpr auto prefix_map = map_fold(
+      std::meta::unpack_sequence_t<std::meta::get_data_members_m<MetaOptions>, get_prefix_pairs>::t);
 
-    // Check that OptionsStruct contains a field equal to MemberLiteral
+
+    static constexpr bool contains(const char* prefix) {
+       // TODO
+      return true;
+    }
+
+    static constexpr void set(OptionsStruct& options, const char* prefix, const char* value) {
+      // retrieve the identifier name with the corresponding prefix and use that name to set the member pointer
+      // need to cast value to the desired type
+    }
+  };
+
+  // Basic implementation idea: accumulate a tuple 
+  template<typename OptionsStruct>
+  optional_t<OptionsStruct> parse(int argc, char** argv) {
+    // Reflect on OptionsStruct
+    // extract metadata from tag struct
+    // map from tag with same name as identifier 
+    // Set the member pointer in options using get_pointer
+
+    // Need to construct runtime prefix-to-compile time index map
+    //std::meta::get_element_m<MetaObj, i>
+
+    OptionsStruct options;
+    for (int i = 1; i < argc; i += 2) {
+      if (OptionsMap<OptionsStruct>::contains(argv[i])) {
+        OptionsMap<OptionsStruct>::set(options, argv[i], argv[i + 1]);
+      } else {
+        // unknown prefix found
+        return std::experimental::nullopt;
+      }
+    }
+
+    return options;
+  }
+
+  template<typename T, typename IdentifierName, typename FlagName, typename ShortFlag, typename HelpString>
+  struct Option;
+
+  template<typename T, char... Id, char... Flag, char... ShortFlag, char... Help>
+  struct Option<T, string_literal<Id...>, string_literal<Flag...>,
+                   string_literal<ShortFlag...>, string_literal<Help...>>
+  {
+    static constexpr char flag[sizeof...(Flag)] = pack_to_literal<string_literal<Flag...>>();
+    static constexpr char short_flag[sizeof...(ShortFlag)] = pack_to_literal<string_literal<ShortFlag...>>();
+    static constexpr char identifier[sizeof...(Id)] = pack_to_literal<string_literal<Id...>>();
+    static constexpr char help[sizeof...(Help)] = pack_to_literal<string_literal<Help...>>();
     /*
-    static_assert(
-        std::meta::unpack_sequence_t<std::meta::get_data_members_m<MetaObj>, has_field>::value,
-        "Can't add argument for field that doesn't exist in options struct.");
-        */
-
-    template<typename ...MetaField>
-    struct get_member {
-      // using field = std::meta::get_base_name_v<MetaField>;
-      using field = typename reduce_pack<
-        typename std::conditional<
-          unpack_string_literal<MemberName>::equal(std::meta::get_base_name_v<MetaField>),
-            MetaField, void*
-        >::type...
-      >::type;
-    };
-    // get the data member with the requested name
-    using MetaField = typename std::meta::unpack_sequence_t<std::meta::get_data_members_m<MetaObj>, get_member>::field;
-
-    // using argument_type = std::meta::get_type_m<MetaField>;
-
-    template<std::size_t ...i>
-    constexpr static std::size_t index_helper(std::index_sequence<i...>) {
-      return ((unpack_string_literal<MemberName>::equal(
-            std::meta::get_base_name_v<std::meta::get_element_m<MetaObj, i>>) ? i : 0) + ...);
-    }
-
-    // we need a pack
-    constexpr static std::size_t index = index_helper(std::make_index_sequence<n_fields>{});
-
-    // Associate the member with the field somehow?
-    // I guess we're going to order by index and then call an aggregate constructor
-
-    // Argument parsing... oh boi
-    // TODO Check for duplicates, check type validity
-    Argument(Args&&... args) noexcept : options(std::make_tuple(args...)) {
-    }
-
-    tuple_t<Args...> options;
+    static constexpr string_literal<Flag...> flag;
+    static constexpr string_literal<ShortFlag...> short_flag;
+    static constexpr string_literal<Id...> identifier;
+    static constexpr string_literal<Help...> help;
+    */
   };
 
-  template<typename OptionsStruct, typename MemberName, typename ...Args>
-  constexpr static auto arg(MemberName&&, Args&&... args) {
-    return Argument<OptionsStruct, MemberName, Args...>(std::forward<Args>(args)...);
-  }
-
-  template<typename OptionsStruct, typename ...Arguments>
-  struct Parser {
-    using MetaObj = reflexpr(OptionsStruct);
-    using OptionsTuple = std::meta::unpack_sequence_t<
-      std::meta::get_data_members_m<MetaObj>, member_pack_as_tuple>;
-
-    Parser(Arguments&&... args) noexcept : arguments(std::make_tuple(args...)) {
-    }
-
-    // Basic implementation idea: accumulate a tuple 
-    optional_t<OptionsStruct> parse(int argc, char** argv) {
-      OptionsTuple values;
-      // Parse argc, argv into OptionsStruct
-      if (argc == 1) {
-        // Invalid
-        if (sizeof...(Arguments) > 0) {
-          return nullopt_t;
-        }
-        // Else, default-construct the struct
-        return OptionsStruct{};
-      }
-      unsigned positional_argument_i = 0;
-
-      // now, to begin parsing
-      // Tokenize argv?
-      // scan through tokens, if it matches a prefix argument, stuff it into the struct
-      for (unsigned i = 0; i < argc; ++i) {
-        if (prefix_map.contains(argv[i])) {
-          if (i == argc - 1) {
-            return nullopt_t;
-          }
-
-          add_argument(values, prefix_map[argv[i]], argv[++i]);
-        }
-        // otherwise, positional argument.
-        add_argument(values, positional_argument_i++, argv[i]);
-      }
-
-      return std::make_from_tuple<OptionsStruct>(values);
-    }
-
-    tuple_t<Arguments...> arguments;
-  };
-
-  template<typename OptionsStruct, typename ...Arguments>
-  auto register_args(Arguments&&... args) {
-    // TODO
-    return Parser<OptionsStruct, Arguments...>(std::forward<Arguments>(args)...);
-  }
 }  // namespace reflopt
 
+#define OPTION_3(Type, Identifier, Flag) \
+  reflopt::Option<Type, decltype(#Identifier ## _s), decltype(Flag ## _s), string_literal<>, string_literal<>> \
+    reflopt_ ## Identifier ## _tag; \
+  Type Identifier
+
+#define OPTION_4(Type, Identifier, Flag, ShortFlag) \
+  reflopt::Option<Type, decltype(#Identifier ## _s), decltype(Flag ## _s), decltype(ShortFlag ## _s), string_literal<>>\
+    reflopt_ ## Identifier ## _tag; \
+  Type Identifier
+
+#define OPTION_5(Type, Identifier, Flag, ShortFlag, Help) \
+  reflopt::Option<Type, decltype(#Identifier ## _s), decltype(Flag ## _s), decltype(ShortFlag ## _s), decltype(Help ## _s)>\
+    reflopt_ ## Identifier ## _tag; \
+  Type Identifier
+
+#define OPTION(...) VRM_PP_CAT(OPTION_, VRM_PP_ARGCOUNT(__VA_ARGS__))(__VA_ARGS__) \
+
+
 struct ProgramOptions {
-  std::vector<std::string> filenames;
-  int iterations = 100;
-  bool help;
+  OPTION(std::string, filename, "--filenames");
+  // default value declaration
+  OPTION(int, iterations, "--iterations", "-i", "Number of times to run the algorithm.") = 100;
+  OPTION(bool, help, "--help", "-h", "Print help and exit");
 };
 
 int main(int argc, char** argv) {
-  using namespace reflopt;
+  auto args = reflopt::parse<ProgramOptions>(argc, argv);
 
-#if 0
-  auto x = arg<ProgramOptions>(&ProgramOptions::iterations,
-        , flags("-i")
-        , help("How many times to run the algorithm.")
-        , nargs("?"));
+  std::cout << args->filename << "\n";
 
-
-  // Here we annotate the fields of ProgramOptions
-  // TODO: Eliminate redundancy of Programoptions tag
-  auto parser = register_args<ProgramOptions>(
-    arg<ProgramOptions>(
-        "iterations"_s
-        , flags("-i")
-        , help("How many times to run the algorithm.")
-        , nargs("?"))
-    , arg<ProgramOptions>(
-        "filenames"_s
-        , help("The filename(s) to run the algorithm over.")
-        , nargs("+")
-      )
-  );
-
-  auto options = parser.parse(arg, argv);
-  if (!options || options.help) {
-    std::cout << parser.help() << "\n";
-    return 1;
-  }
-#endif
-
+  return 0;
 }
