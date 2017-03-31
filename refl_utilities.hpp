@@ -109,6 +109,6 @@ struct get_member_pointer {
 template<typename T, typename MemberName>
 struct get_member_type {
   using MetaObj = reflexpr(T);
-  using type = std::meta::get_reflected_type_t<std::meta::get_element_m<
-    std::meta::get_member_types_m<MetaObj>, index_of_member<T, MemberName>::index>>;
+  using type = std::meta::get_reflected_type_t<std::meta::get_type_m<std::meta::get_element_m<
+    std::meta::get_data_members_m<MetaObj>, index_of_member<T, MemberName>::index>>>;
 };

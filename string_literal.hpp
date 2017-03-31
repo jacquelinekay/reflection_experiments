@@ -89,7 +89,7 @@ struct compare_indices;
 
 template<size_t ...Indices, char... Pack>
 struct compare_indices<std::index_sequence<Indices...>, Pack...> {
-  static auto helper(char* value) {
+  static auto helper(const char* value) {
     return ((value[Indices] != 0 && value[Indices] == Pack) && ...);
   }
 };
@@ -102,7 +102,7 @@ struct compare_helper<string_literal<Pack...>>
   : compare_indices<std::make_index_sequence<sizeof...(Pack)>, Pack...> { };
 
 template<typename Pack>
-bool compare(char* value) {
+bool compare(const char* value) {
   if (value == NULL) {
     return false;
   }

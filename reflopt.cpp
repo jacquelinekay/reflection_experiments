@@ -86,14 +86,20 @@ namespace reflopt {
       std::meta::unpack_sequence_t<std::meta::get_data_members_m<MetaOptions>, get_prefix_pairs>::helper();
 
 
-    static constexpr bool contains(const char* prefix) {
-      return hana::contains(prefix_map, prefix);
+    static bool contains(const char* prefix) {
+      return hana::fold(hana::keys(prefix_map),
+        false,
+        [&prefix](bool x, auto&& key) {
+          return x || compare<typename std::decay_t<decltype(key)>::type>(prefix);
+        }
+      );
     }
 
-    static auto set(OptionsStruct& options, char* prefix, char* value) {
+    static auto set(OptionsStruct& options, const char* prefix, const char* value) {
       // Match prefix with a compile-time key!
       hana::for_each(hana::keys(prefix_map),
         [&options, &prefix, &value](auto&& key) {
+          using Key = typename std::decay_t<decltype(key)>::type;
           if (compare<typename std::decay_t<decltype(key)>::type>(prefix)) {
             // retrieve the identifier name with the corresponding prefix
             // use that name to set the member pointer
@@ -101,12 +107,8 @@ namespace reflopt {
             using ID = typename decltype(id)::type;
 
             constexpr auto member_pointer = get_member_pointer<OptionsStruct, ID>::value;
-            std::cerr << "n fields: " << n_fields<OptionsStruct>::value << "\n";
-            std::cerr << "index of type: " << index_of_member<OptionsStruct, ID>::index <<  "\n";
-            /*
-            options.*member_pointer = boost::lexical_cast<get_member_type<OptionsStruct, ID>::type>(
+            options.*member_pointer = boost::lexical_cast<typename get_member_type<OptionsStruct, ID>::type>(
               value, strnlen(value, max_value_length));
-            */
           }
         }
       );
