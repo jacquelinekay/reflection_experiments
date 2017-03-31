@@ -13,6 +13,21 @@ constexpr std::array<charT, sizeof...(Pack)> pack_to_literal() {
   return {Pack...};
 }
 
+template<typename charT, charT ...Pack>
+std::string pack_to_string() {
+  return (std::string() + ... + Pack);
+}
+
+template<typename T, typename charT = char>
+struct literal_type_to_string;
+
+template<typename charT, charT ...Pack>
+struct literal_type_to_string<string_literal<Pack...>, charT> {
+  static std::string convert() {
+    return pack_to_string<charT, Pack...>();
+  }
+};
+
 template <char... Pack>
 using char_sequence = std::integer_sequence<char, Pack...>;
 
@@ -65,3 +80,31 @@ struct unpack_string_literal;
 template<char ...Pack>
 struct unpack_string_literal<string_literal<Pack...>> : string_ops<Pack...> {
 };
+
+
+// Runtime/compile-time string comparison
+
+template<typename Indices, char... Pack>
+struct compare_indices;
+
+template<size_t ...Indices, char... Pack>
+struct compare_indices<std::index_sequence<Indices...>, Pack...> {
+  static auto helper(char* value) {
+    return ((value[Indices] != 0 && value[Indices] == Pack) && ...);
+  }
+};
+
+template<typename P>
+struct compare_helper;
+
+template<char... Pack>
+struct compare_helper<string_literal<Pack...>>
+  : compare_indices<std::make_index_sequence<sizeof...(Pack)>, Pack...> { };
+
+template<typename Pack>
+bool compare(char* value) {
+  if (value == NULL) {
+    return false;
+  }
+  return compare_helper<Pack>::helper(value);
+}

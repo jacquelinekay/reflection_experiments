@@ -4,6 +4,8 @@
 // TODO: pare down includes
 #include <boost/hana.hpp>
 
+#include <boost/lexical_cast.hpp>
+
 #include <reflexpr>
 #include <experimental/optional>
 #include <string>
@@ -17,93 +19,14 @@
 #include <vrm/pp/arg_count.hpp>
 #include <vrm/pp/cat.hpp>
 
-namespace reflopt {
-  namespace hana = boost::hana;
 
-  template<typename ...Ts>
-  using tuple_t = std::tuple<Ts...>;
+namespace reflopt {
+  static const size_t max_value_length = 128;
+
+  namespace hana = boost::hana;
 
   template<typename T>
   using optional_t = std::experimental::optional<T>;
-
-  template<typename KVPairs>
-  constexpr auto map_fold(KVPairs&& kv_pairs) {
-    constexpr auto pair_insert = [](auto&& m, auto&& element) {
-      return m.insert(element[0], element[1]);
-    };
-    return boost::hana::fold(kv_pairs, boost::hana::make_map(), pair_insert);
-  }
-
-  template<typename OptionsStruct>
-  struct OptionsMap {
-    using MetaOptions = reflexpr(OptionsStruct);
-
-    template<typename Indices, typename ...MetaFields>
-    struct get_prefix_pairs_helper;
-
-    template<size_t... Indices, typename ...MetaFields>
-    struct get_prefix_pairs_helper<std::index_sequence<Indices...>, MetaFields...> {
-      static constexpr auto filtered_fields = hana::filter(
-          hana::make_tuple(hana::type_c<decl_data_member_type<Indices, MetaFields>::type>...),
-          [](auto&& field){
-            // using T = typename decltype(field)::type;
-            using T = typename std::decay_t<decltype(field)>::type;
-            return has_member<T, decltype("identifier"_s)>::value
-                && has_member<T, decltype("flag"_s)>::value;
-          });
-      static constexpr auto t = hana::fold(filtered_fields,
-        [](auto&& x, auto&& field) {
-          using T = decltype(field);
-          auto result = x.append(hana::make_pair(field.flag, field.identifier));
-          if constexpr(has_member<T, decltype("short_flag"_s)>::value) {
-            result.append(hana::make_pair(field.short_flag, field.identifier));
-          }
-          return result;
-        });
-    };
-
-    template<typename ...MetaFields>
-    struct get_prefix_pairs : get_prefix_pairs_helper<std::index_sequence_for<MetaFields...>, MetaFields...> {
-    };
-
-    static constexpr auto prefix_map = map_fold(
-      std::meta::unpack_sequence_t<std::meta::get_data_members_m<MetaOptions>, get_prefix_pairs>::t);
-
-
-    static constexpr bool contains(const char* prefix) {
-       // TODO
-      return true;
-    }
-
-    static constexpr void set(OptionsStruct& options, const char* prefix, const char* value) {
-      // retrieve the identifier name with the corresponding prefix and use that name to set the member pointer
-      // need to cast value to the desired type
-    }
-  };
-
-  // Basic implementation idea: accumulate a tuple 
-  template<typename OptionsStruct>
-  optional_t<OptionsStruct> parse(int argc, char** argv) {
-    // Reflect on OptionsStruct
-    // extract metadata from tag struct
-    // map from tag with same name as identifier 
-    // Set the member pointer in options using get_pointer
-
-    // Need to construct runtime prefix-to-compile time index map
-    //std::meta::get_element_m<MetaObj, i>
-
-    OptionsStruct options;
-    for (int i = 1; i < argc; i += 2) {
-      if (OptionsMap<OptionsStruct>::contains(argv[i])) {
-        OptionsMap<OptionsStruct>::set(options, argv[i], argv[i + 1]);
-      } else {
-        // unknown prefix found
-        return std::experimental::nullopt;
-      }
-    }
-
-    return options;
-  }
 
   template<typename T, typename IdentifierName, typename FlagName, typename ShortFlag, typename HelpString>
   struct Option;
@@ -116,13 +39,102 @@ namespace reflopt {
     static constexpr char short_flag[sizeof...(ShortFlag)] = pack_to_literal<string_literal<ShortFlag...>>();
     static constexpr char identifier[sizeof...(Id)] = pack_to_literal<string_literal<Id...>>();
     static constexpr char help[sizeof...(Help)] = pack_to_literal<string_literal<Help...>>();
-    /*
-    static constexpr string_literal<Flag...> flag;
-    static constexpr string_literal<ShortFlag...> short_flag;
-    static constexpr string_literal<Id...> identifier;
-    static constexpr string_literal<Help...> help;
-    */
+
+    using flag_t = string_literal<Flag...>;
+    using identifier_t = string_literal<Id...>;
+    using short_flag_t = string_literal<ShortFlag...>;
+    using help_t = string_literal<Help...>;
   };
+
+  template<typename OptionsStruct>
+  struct OptionsMap {
+    using MetaOptions = reflexpr(OptionsStruct);
+
+    template<typename... MetaFields>
+    struct get_prefix_pairs {
+      static constexpr auto helper() {
+        auto filtered = hana::filter(
+          hana::make_tuple(hana::type_c<MetaFields>...),
+          [](auto&& field) {
+            using MetaT = typename std::decay_t<decltype(field)>::type;
+            using T = std::meta::get_reflected_type_t<std::meta::get_type_m<MetaT>>;
+            return hana::bool_c<is_specialization<T, Option>{}>;
+          }
+        );
+        return hana::fold(
+          // hana::make_tuple(hana::type_c<MetaFields>...),
+          filtered,
+          hana::make_map(),
+          [](auto&& x, auto&& field) {
+            using MetaT = typename std::decay_t<decltype(field)>::type;
+            using T = std::meta::get_reflected_type_t<std::meta::get_type_m<MetaT>>;
+            return hana::insert(
+                x, hana::make_pair(hana::type_c<typename T::flag_t>, hana::type_c<typename T::identifier_t>));
+            /*
+             // TODO: Fix meta_has_member
+            if constexpr(meta_has_member<MetaT, decltype("short_flag"_s)>::value) {
+              return hana::insert(result, hana::make_pair(hana::type_c<T::short_flag_t>, hana::type_c<T::identifier_t>));
+            } else {
+              return result;
+            }
+            */
+          });
+      }
+    };
+
+    static constexpr auto prefix_map =
+      std::meta::unpack_sequence_t<std::meta::get_data_members_m<MetaOptions>, get_prefix_pairs>::helper();
+
+
+    static constexpr bool contains(const char* prefix) {
+      return hana::contains(prefix_map, prefix);
+    }
+
+    static auto set(OptionsStruct& options, char* prefix, char* value) {
+      // Match prefix with a compile-time key!
+      hana::for_each(hana::keys(prefix_map),
+        [&options, &prefix, &value](auto&& key) {
+          if (compare<typename std::decay_t<decltype(key)>::type>(prefix)) {
+            // retrieve the identifier name with the corresponding prefix
+            // use that name to set the member pointer
+            auto id = hana::at_key(prefix_map, key);
+            using ID = typename decltype(id)::type;
+
+            constexpr auto member_pointer = get_member_pointer<OptionsStruct, ID>::value;
+            std::cerr << "n fields: " << n_fields<OptionsStruct>::value << "\n";
+            std::cerr << "index of type: " << index_of_member<OptionsStruct, ID>::index <<  "\n";
+            /*
+            options.*member_pointer = boost::lexical_cast<get_member_type<OptionsStruct, ID>::type>(
+              value, strnlen(value, max_value_length));
+            */
+          }
+        }
+      );
+    }
+  };
+
+  template<typename OptionsStruct>
+  optional_t<OptionsStruct> parse(int argc, char** argv) {
+    OptionsStruct options;
+    for (int i = 1; i < argc; i += 2) {
+      if (OptionsMap<OptionsStruct>::contains(argv[i])) {
+        OptionsMap<OptionsStruct>::set(options, argv[i], argv[i + 1]);
+      } else {
+        // unknown prefix found
+        std::cerr << "Unknown prefix found: " << argv[i] << "\n";
+        std::cerr << "map keys:\n";
+        hana::for_each(hana::keys(OptionsMap<OptionsStruct>::prefix_map),
+          [](auto&& k) {
+            std::cerr << literal_type_to_string<typename std::decay_t<decltype(k)>::type>::convert() << "\n";
+          }
+        );
+
+        return std::experimental::nullopt;
+      }
+    }
+
+    return options;
+  }
 
 }  // namespace reflopt
 
@@ -145,7 +157,7 @@ namespace reflopt {
 
 
 struct ProgramOptions {
-  OPTION(std::string, filename, "--filenames");
+  OPTION(std::string, filename, "--filename");
   // default value declaration
   OPTION(int, iterations, "--iterations", "-i", "Number of times to run the algorithm.") = 100;
   OPTION(bool, help, "--help", "-h", "Print help and exit");
@@ -153,8 +165,14 @@ struct ProgramOptions {
 
 int main(int argc, char** argv) {
   auto args = reflopt::parse<ProgramOptions>(argc, argv);
+  if (!args) {
+    std::cerr << "Argument parsing failed." << std::endl;
+    // TODO: Automated help string
+    return -1;
+  }
 
   std::cout << args->filename << "\n";
+  std::cout << args->iterations << "\n";
 
   return 0;
 }
