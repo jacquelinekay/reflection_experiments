@@ -1,11 +1,23 @@
 #pragma once
 
+namespace jk {
+namespace string_literal {
+
 template <char...> struct string_literal {};
 
+}  // namespace string_literal
+}  // namespacejk 
+
 template <typename charT, charT... Pack>
-constexpr string_literal<Pack...> operator""_s() {
+constexpr jk::string_literal::string_literal<Pack...> operator""_s() {
   return {};
 }
+
+namespace jk {
+namespace string_literal {
+
+template<typename T>
+struct empty : std::bool_constant<std::is_same<T, string_literal<>>{}> { };
 
 // Convert from string_literal to const char
 template<typename charT, charT ...Pack>
@@ -108,3 +120,6 @@ bool compare(const char* value) {
   }
   return compare_helper<Pack>::helper(value);
 }
+
+}  // namespace string_literal
+}  // namespace jk

@@ -23,6 +23,8 @@
 namespace reflopt {
   static const size_t max_value_length = 128;
 
+  namespace refl = jk::refl_utilities;
+  namespace sl = jk::string_literal;
   namespace hana = boost::hana;
 
   template<typename T>
@@ -32,18 +34,20 @@ namespace reflopt {
   struct Option;
 
   template<typename T, char... Id, char... Flag, char... ShortFlag, char... Help>
-  struct Option<T, string_literal<Id...>, string_literal<Flag...>,
-                   string_literal<ShortFlag...>, string_literal<Help...>>
+  struct Option<T, sl::string_literal<Id...>, sl::string_literal<Flag...>,
+                   sl::string_literal<ShortFlag...>, sl::string_literal<Help...>>
   {
-    static constexpr char flag[sizeof...(Flag)] = pack_to_literal<string_literal<Flag...>>();
-    static constexpr char short_flag[sizeof...(ShortFlag)] = pack_to_literal<string_literal<ShortFlag...>>();
-    static constexpr char identifier[sizeof...(Id)] = pack_to_literal<string_literal<Id...>>();
-    static constexpr char help[sizeof...(Help)] = pack_to_literal<string_literal<Help...>>();
+    /*
+    static constexpr char flag[sizeof...(Flag)] = pack_to_literal<sl::string_literal<Flag...>>();
+    static constexpr char short_flag[sizeof...(ShortFlag)] = pack_to_literal<sl::string_literal<ShortFlag...>>();
+    static constexpr char identifier[sizeof...(Id)] = pack_to_literal<sl::string_literal<Id...>>();
+    static constexpr char help[sizeof...(Help)] = pack_to_literal<sl::string_literal<Help...>>();
+    */
 
-    using flag_t = string_literal<Flag...>;
-    using identifier_t = string_literal<Id...>;
-    using short_flag_t = string_literal<ShortFlag...>;
-    using help_t = string_literal<Help...>;
+    using flag_t = sl::string_literal<Flag...>;
+    using identifier_t = sl::string_literal<Id...>;
+    using short_flag_t = sl::string_literal<ShortFlag...>;
+    using help_t = sl::string_literal<Help...>;
   };
 
   template<typename OptionsStruct>
@@ -58,26 +62,25 @@ namespace reflopt {
           [](auto&& field) {
             using MetaT = typename std::decay_t<decltype(field)>::type;
             using T = std::meta::get_reflected_type_t<std::meta::get_type_m<MetaT>>;
-            return hana::bool_c<is_specialization<T, Option>{}>;
+            return hana::bool_c<refl::is_specialization<T, Option>{}>;
           }
         );
         return hana::fold(
-          // hana::make_tuple(hana::type_c<MetaFields>...),
           filtered,
           hana::make_map(),
           [](auto&& x, auto&& field) {
             using MetaT = typename std::decay_t<decltype(field)>::type;
             using T = std::meta::get_reflected_type_t<std::meta::get_type_m<MetaT>>;
-            return hana::insert(
+            auto result = hana::insert(
                 x, hana::make_pair(hana::type_c<typename T::flag_t>, hana::type_c<typename T::identifier_t>));
-            /*
-             // TODO: Fix meta_has_member
-            if constexpr(meta_has_member<MetaT, decltype("short_flag"_s)>::value) {
-              return hana::insert(result, hana::make_pair(hana::type_c<T::short_flag_t>, hana::type_c<T::identifier_t>));
+            if constexpr(refl::has_member<T, decltype("short_flag"_s)>::value
+                         && !sl::empty<typename T::short_flag_t>{}) {
+              return hana::insert(
+                result, hana::make_pair(
+                  hana::type_c<typename T::short_flag_t>, hana::type_c<typename T::identifier_t>));
             } else {
               return result;
             }
-            */
           });
       }
     };
@@ -90,24 +93,20 @@ namespace reflopt {
       return hana::fold(hana::keys(prefix_map),
         false,
         [&prefix](bool x, auto&& key) {
-          return x || compare<typename std::decay_t<decltype(key)>::type>(prefix);
+          return x || sl::compare<typename std::decay_t<decltype(key)>::type>(prefix);
         }
       );
     }
 
     static auto set(OptionsStruct& options, const char* prefix, const char* value) {
-      // Match prefix with a compile-time key!
       hana::for_each(hana::keys(prefix_map),
         [&options, &prefix, &value](auto&& key) {
-          using Key = typename std::decay_t<decltype(key)>::type;
-          if (compare<typename std::decay_t<decltype(key)>::type>(prefix)) {
-            // retrieve the identifier name with the corresponding prefix
-            // use that name to set the member pointer
-            auto id = hana::at_key(prefix_map, key);
-            using ID = typename decltype(id)::type;
+          if (sl::compare<typename std::decay_t<decltype(key)>::type>(prefix)) {
+            using ID = typename std::decay_t<decltype(hana::at_key(prefix_map, key))>::type;
 
-            constexpr auto member_pointer = get_member_pointer<OptionsStruct, ID>::value;
-            options.*member_pointer = boost::lexical_cast<typename get_member_type<OptionsStruct, ID>::type>(
+            constexpr auto member_pointer = refl::get_member_pointer<OptionsStruct, ID>::value;
+            using MemberType = typename refl::get_member_type<OptionsStruct, ID>::type;
+            options.*member_pointer = boost::lexical_cast<MemberType>(
               value, strnlen(value, max_value_length));
           }
         }
@@ -120,14 +119,14 @@ namespace reflopt {
     OptionsStruct options;
     for (int i = 1; i < argc; i += 2) {
       if (OptionsMap<OptionsStruct>::contains(argv[i])) {
-        OptionsMap<OptionsStruct>::set(options, argv[i], argv[i + 1]);
+          OptionsMap<OptionsStruct>::set(options, argv[i], argv[i + 1]);
       } else {
         // unknown prefix found
         std::cerr << "Unknown prefix found: " << argv[i] << "\n";
         std::cerr << "map keys:\n";
         hana::for_each(hana::keys(OptionsMap<OptionsStruct>::prefix_map),
           [](auto&& k) {
-            std::cerr << literal_type_to_string<typename std::decay_t<decltype(k)>::type>::convert() << "\n";
+            std::cerr << sl::literal_type_to_string<typename std::decay_t<decltype(k)>::type>::convert() << "\n";
           }
         );
 
@@ -141,17 +140,20 @@ namespace reflopt {
 }  // namespace reflopt
 
 #define OPTION_3(Type, Identifier, Flag) \
-  reflopt::Option<Type, decltype(#Identifier ## _s), decltype(Flag ## _s), string_literal<>, string_literal<>> \
+  reflopt::Option<Type, decltype(#Identifier ## _s), decltype(Flag ## _s), \
+  reflopt::sl::string_literal<>, reflopt::sl::string_literal<>> \
     reflopt_ ## Identifier ## _tag; \
   Type Identifier
 
 #define OPTION_4(Type, Identifier, Flag, ShortFlag) \
-  reflopt::Option<Type, decltype(#Identifier ## _s), decltype(Flag ## _s), decltype(ShortFlag ## _s), string_literal<>>\
+  reflopt::Option<Type, decltype(#Identifier ## _s), decltype(Flag ## _s), \
+  decltype(ShortFlag ## _s), reflopt::sl::string_literal<>>\
     reflopt_ ## Identifier ## _tag; \
   Type Identifier
 
 #define OPTION_5(Type, Identifier, Flag, ShortFlag, Help) \
-  reflopt::Option<Type, decltype(#Identifier ## _s), decltype(Flag ## _s), decltype(ShortFlag ## _s), decltype(Help ## _s)>\
+  reflopt::Option<Type, decltype(#Identifier ## _s), decltype(Flag ## _s), \
+  decltype(ShortFlag ## _s), decltype(Help ## _s)>\
     reflopt_ ## Identifier ## _tag; \
   Type Identifier
 
