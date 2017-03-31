@@ -46,7 +46,6 @@ namespace reflopt {
       static constexpr auto filtered_fields = hana::filter(
           hana::make_tuple(hana::type_c<decl_data_member_type<Indices, MetaFields>::type>...),
           [](auto&& field){
-            // using T = typename decltype(field)::type;
             using T = typename std::decay_t<decltype(field)>::type;
             return has_member<T, decltype("identifier"_s)>::value
                 && has_member<T, decltype("flag"_s)>::value;
@@ -94,12 +93,14 @@ namespace reflopt {
 
     OptionsStruct options;
     for (int i = 1; i < argc; i += 2) {
+      /*
       if (OptionsMap<OptionsStruct>::contains(argv[i])) {
         OptionsMap<OptionsStruct>::set(options, argv[i], argv[i + 1]);
       } else {
         // unknown prefix found
         return std::experimental::nullopt;
       }
+      */
     }
 
     return options;
