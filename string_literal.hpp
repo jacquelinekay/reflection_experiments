@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 namespace jk {
 namespace string_literal {
 
@@ -18,6 +20,12 @@ namespace string_literal {
 
 template<typename T>
 struct empty : std::bool_constant<std::is_same<T, string_literal<>>{}> { };
+
+template<typename String>
+struct string_length;
+
+template<char... Pack>
+struct string_length<string_literal<Pack...>> : std::integral_constant<size_t, sizeof...(Pack)> {};
 
 // Convert from string_literal to const char
 template<typename charT, charT ...Pack>
@@ -62,46 +70,13 @@ template <std::size_t I, char... Ts> struct nth_char {
       select<I>(indexer<std::make_index_sequence<sizeof...(Ts)>, Ts...>{});
 };
 
-// compare ...Pack to a const char[N]
-template <char... Pack> struct string_ops {
-  template <typename CharArray, std::size_t... i>
-  constexpr static bool equal_helper(std::index_sequence<i...>,
-                                     CharArray &&value) {
-    return ((value[i] == nth_char<i, Pack...>::value) && ...);
-  }
-
-  template <char... ComparePack, std::size_t... i>
-  constexpr static bool equal_helper(std::index_sequence<i...>,
-                                     const string_literal<ComparePack...> &) {
-    if constexpr(sizeof...(ComparePack) != sizeof...(Pack)) {
-      return false;
-    } else {
-      return ((nth_char<i, ComparePack...>::value
-            == nth_char<i, Pack...>::value) && ...);
-    }
-  }
-
-  template <typename CharArray> constexpr static bool equal(CharArray &&value) {
-    return equal_helper(std::make_index_sequence<sizeof...(Pack)>{}, value);
-  }
-};
-
-template<typename T>
-struct unpack_string_literal;
-
-template<char ...Pack>
-struct unpack_string_literal<string_literal<Pack...>> : string_ops<Pack...> {
-};
-
-
 // Runtime/compile-time string comparison
-
 template<typename Indices, char... Pack>
 struct compare_indices;
 
 template<size_t ...Indices, char... Pack>
 struct compare_indices<std::index_sequence<Indices...>, Pack...> {
-  static auto helper(const char* value) {
+  constexpr static auto helper(const char* value) {
     return ((value[Indices] != 0 && value[Indices] == Pack) && ...);
   }
 };
@@ -111,14 +86,43 @@ struct compare_helper;
 
 template<char... Pack>
 struct compare_helper<string_literal<Pack...>>
-  : compare_indices<std::make_index_sequence<sizeof...(Pack)>, Pack...> { };
+  : compare_indices<std::make_index_sequence<sizeof...(Pack)>, Pack...> {};
+
+template<typename I, typename P, char... Pack2>
+struct static_compare_helper;
+
+template<size_t... i, char... Pack, char...Pack2>
+struct static_compare_helper<std::index_sequence<i...>, string_literal<Pack...>, Pack2...> {
+  static constexpr bool compare() {
+    if constexpr (sizeof...(Pack2) != sizeof...(Pack)) {
+      return false;
+    } else {
+      return ((nth_char<i, Pack2...>::value
+            == nth_char<i, Pack...>::value) && ...);
+    }
+  }
+};
+
+template<typename Pack, size_t N>
+constexpr bool compare(const char value[N]) {
+  if constexpr (string_length<Pack>{} != N) {
+    return false;
+  } else {
+    return compare_helper<Pack>::helper(value);
+  }
+}
 
 template<typename Pack>
-bool compare(const char* value) {
+constexpr bool compare(const char* value) {
   if (value == NULL) {
     return false;
   }
   return compare_helper<Pack>::helper(value);
+}
+
+template<typename Pack, char...Pack2>
+constexpr bool compare(const string_literal<Pack2...>& value) {
+  return static_compare_helper<std::make_index_sequence<sizeof...(Pack2)>, Pack, Pack2...>::compare();
 }
 
 }  // namespace string_literal
