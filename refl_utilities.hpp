@@ -16,6 +16,24 @@ struct is_specialization : std::false_type {};
 template<template<typename...> class Ref, typename... Args>
 struct is_specialization<Ref<Args...>, Ref>: std::true_type {};
 
+// TODO
+template<typename S>
+struct is_iterable {
+  template<typename T>
+  static constexpr bool test(T* pt, decltype(pt->begin())* = nullptr, decltype(pt->end())* = nullptr,
+      typename T::iterator* = nullptr) {
+    return std::is_same<decltype(pt->begin()), typename T::iterator>::value &&
+                std::is_same<decltype(pt->end()), typename T::iterator>::value;
+  }
+
+  template<typename T>
+  static constexpr bool test(...) {
+    return false;
+  }
+
+  static constexpr const bool value = test<S>(nullptr);
+};
+
 // Unwrap type from hana::type_c
 #define UNWRAP_TYPE(TypeWrapper) typename std::decay_t<decltype(TypeWrapper)>::type
 
@@ -42,6 +60,22 @@ struct n_fields : meta::get_size<meta::get_data_members_m<reflexpr(T)>> {};
 template<typename MemberName, typename ...MetaField>
 struct has_member_pack : std::bool_constant<((sl::compare<MemberName>(
     meta::get_base_name_v<MetaField>)) || ...)> { };
+
+// generic meta-object fold
+template<typename ...Object>
+struct runtime_fold_helper {
+  template<typename T, typename Func>
+  static inline auto apply(T&& t, Func&& func) {
+    // TODO: Nope.
+    return (func(Object{}, t.*meta::get_pointer<Object>{}), ...);
+  }
+};
+
+template<typename T, typename Func>
+auto meta_fold_over_data_members(T&& t, Func&& func) {
+  using MetaT = reflexpr(T);
+	return meta::unpack_sequence_t<meta::get_data_members_m<MetaT>, runtime_fold_helper>::apply(t, func);
+}
 
 template<typename T, typename MemberName>
 struct has_member {
@@ -76,8 +110,20 @@ constexpr static std::size_t index_helper(std::index_sequence<i...>) {
         meta::get_data_members_m<reflexpr(T)>, i>>) ? i : 0) + ...);
 }
 
+template<typename T, typename MetaInfo, std::size_t ...i>
+constexpr static std::size_t index_metainfo_helper(std::index_sequence<i...>) {
+  return (((meta::get_base_name_v<MetaInfo> ==
+    meta::get_base_name_v<
+      meta::get_element_m<
+        meta::get_data_members_m<reflexpr(T)>, i>>) ? i : 0) + ...);
+}
+
 template<typename T, typename MemberName>
 struct index_of_member : std::integral_constant<size_t, index_helper<T, MemberName>(
+  std::make_index_sequence<n_fields<T>{}>{})> {};
+
+template<typename T, typename MetaInfo>
+struct index_of_metainfo : std::integral_constant<size_t, index_metainfo_helper<T, MetaInfo>(
   std::make_index_sequence<n_fields<T>{}>{})> {};
 
 template<typename T, typename MemberName>
@@ -89,6 +135,45 @@ template<typename T, typename MemberName>
 struct get_member_type {
   using type = unreflect_type<meta::get_element_m<
     meta::get_data_members_m<reflexpr(T)>, index_of_member<T, MemberName>{}>>;
+};
+
+// free metafunctions for metaobjects
+struct get_name {
+  template<typename MetaT>
+  constexpr auto operator()(MetaT&& t) {
+    return meta::get_base_name<MetaT>{};
+  }
+};
+
+// implement overload
+template<typename... Ts>
+struct overloader {
+  using Ts::operator()...;
+
+  overloader(Ts... xs) : fs(xs...) {}
+
+  std::tuple<Ts...> fs;
+};
+
+template <typename... Ts>
+auto overload(Ts&... xs)
+{
+  return overloader<std::decay_t<Ts>...>{xs...};
+}
+
+// adapted from http://stackoverflow.com/questions/35608977/understanding-y-combinator-through-generic-lambdas
+template<class F>
+struct y_combinator_t {
+  F f;
+  template<class...Args>
+  decltype(auto) operator()(Args&&...args)const {
+    return f(*this, std::forward<Args>(args)...);
+  }
+};
+
+template<class F>
+y_combinator_t<std::decay_t<F>> y_combinator( F&& f ) {
+  return {std::forward<F>(f)};
 };
 
 }  // namespace refl_utilities

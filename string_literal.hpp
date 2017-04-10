@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <string>
 
 namespace jk {
@@ -8,7 +9,7 @@ namespace string_literal {
 template <char...> struct string_literal {};
 
 }  // namespace string_literal
-}  // namespacejk 
+}  // namespace jk 
 
 template <typename charT, charT... Pack>
 constexpr jk::string_literal::string_literal<Pack...> operator""_s() {

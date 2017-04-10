@@ -9,9 +9,11 @@ all: type_synthesis concepts
 type_synthesis: type_synthesis.cpp
 	$(CXX) $(INCLUDES) $(REFL_FLAGS) type_synthesis.cpp -o type_synthesis
 
-concepts: concepts.cpp
-	$(CXX) $(INCLUDES) $(REFL_FLAGS) -Xclang -fconcepts-ts -I/$(HANA_DIR)/include -O3 concepts.cpp -o concepts
+#concepts: concepts.cpp
+#	$(CXX) $(INCLUDES) $(REFL_FLAGS) -Xclang -fconcepts-ts -I/$(HANA_DIR)/include -O3 concepts.cpp -o concepts
 
 reflopt: reflopt.cpp
 	$(CXX) $(INCLUDES) -I/$(PP_DIR)/include -I/$(HANA_DIR)/include $(REFL_FLAGS) reflopt.cpp -o reflopt
 
+serialization: serialization.cpp
+	$(CXX) $(INCLUDES) $(REFL_FLAGS) serialization.cpp -o serialization
