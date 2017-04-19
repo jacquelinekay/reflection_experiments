@@ -2,7 +2,6 @@
 
 #include <utility>
 namespace jk {
-
 template<typename Callable, typename X0, typename X1, typename ...Xs>
 struct fold_right_helper {
   static constexpr decltype(auto) fold(Callable&& f, Xs&&... xs, X0&& x0, X1&& x1) {

@@ -1,5 +1,6 @@
 /* it would be great generate comprehensive tests, maybe piggyback on an 
  * */
+#include "comparisons.hpp"
 #include "reflser.hpp"
 
 #include <array>
@@ -17,6 +18,8 @@ struct primitives {
   double double_member;
 
   std::string string_member;
+
+  bool bool_member;
 };
 
 template<auto N>
@@ -33,7 +36,6 @@ struct arrays_of_primitives {
   std::array<std::string, N> string_member;
 };
 
-template<auto N>
 struct vectors_of_primitives {
   std::vector<int> int_member;
   std::vector<unsigned> uint_member;
@@ -48,26 +50,34 @@ struct vectors_of_primitives {
 };
 
 struct nested {
-  primitives p;
+  primitives primitives_member;
+  vectors_of_primitives vector_member;
 };
 
 
 int main(int argc, char** argv) {
+  primitives primitives_test{1, 2, 3, 4, 5.6, 7.8, "hello world", true};
   {
-    primitives test{1, 2, 3, 4, 5.6, 7.8, "hello world"};
     std::string dst = "";
-    auto result = reflser::serialize(test, dst);
+    auto result = reflser::serialize(primitives_test, dst);
     std::cout << dst << "\n";
 
     primitives deserialized;
     std::string_view dst_view = dst;
-    // values appear to be totally screwed here!
     if (auto result = reflser::deserialize(dst_view, deserialized); result != reflser::deserialize_result::success) {
       std::cout << reflser::deserialize_result_message(result) << "\n";
+      return -1;
     }
+
     dst = "";
 
-    auto result2 = reflser::serialize(deserialized, dst);
+    reflser::serialize(deserialized, dst);
     std::cout << dst << "\n";
+
+    assert(reflcompare::equal(primitives_test, deserialized));
+  }
+
+  {
+
   }
 }

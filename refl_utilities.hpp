@@ -3,6 +3,7 @@
 #include "generalized_fold.hpp"
 #include <reflexpr>
 
+#include <experimental/type_traits>
 #include <variant>
 
 namespace jk {
@@ -18,6 +19,25 @@ struct is_specialization : std::false_type {};
 
 template<template<typename...> class Ref, typename... Args>
 struct is_specialization<Ref<Args...>, Ref>: std::true_type {};
+
+template<typename T>
+using stringable = std::void_t<decltype(std::to_string(std::declval<T>()))>;
+
+template<typename T>
+using iterable = std::void_t<
+  decltype(std::declval<T>().begin()), decltype(std::declval<T>().end())>;
+
+template<typename T>
+using resizable = std::void_t<decltype(std::declval<T>().resize())>;
+
+template<typename T>
+using has_tuple_size = std::void_t<std::tuple_size<T>>;
+
+template<typename T>
+using equality_comparable = std::void_t<decltype(std::declval<T>() == std::declval<T>())>;
+
+template<template<typename ...> typename Op, typename... Args>
+using is_detected = std::experimental::is_detected<Op, Args...>;
 
 // Unwrap type from hana::type_c
 #define UNWRAP_TYPE(TypeWrapper) typename std::decay_t<decltype(TypeWrapper)>::type
@@ -51,15 +71,14 @@ template<typename ...Object>
 struct runtime_fold_helper {
   template<typename T, typename Init, typename Func>
   static inline auto apply(T&& t, Init&& init, Func&& func) {
-    return fold(func, init,
-      t.*meta::get_pointer<Object>::value ...);
+    return fold(func, init, t.*meta::get_pointer<Object>::value ...);
   }
 };
 
 // Func is a callable of arity 2
 template<typename T, typename Init, typename Func,
   typename std::enable_if_t<meta::get_size<meta::get_data_members_m<reflexpr(std::decay_t<T>)>>{} >= 1>* = nullptr>
-auto fold_over_data_members(T&& t, Init&& init, Func&& func) {
+auto fold_over_data_members(Func&& func, Init&& init, T&& t) {
   using MetaT = reflexpr(std::decay_t<T>);
 	return meta::unpack_sequence_t<meta::get_data_members_m<MetaT>, runtime_fold_helper>::apply(t, init, func);
 }

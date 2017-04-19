@@ -20,3 +20,6 @@ serialization: serialization.cpp
 
 generalized_fold: generalized_fold.cpp
 	$(CXX) $(INCLUDES) $(REFL_FLAGS) generalized_fold.cpp -o generalized_fold
+
+comparisons: comparisons.cpp
+	$(CXX) $(INCLUDES) $(REFL_FLAGS) comparisons.cpp -o comparisons

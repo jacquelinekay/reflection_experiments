@@ -6,12 +6,9 @@
 
 #include <boost/lexical_cast.hpp>
 
-#include <experimental/type_traits>
-
 #include "refl_utilities.hpp"
 
-
-// TODO: Error handling
+#include <iostream>
 
 namespace reflser {
 
@@ -52,6 +49,7 @@ std::string_view strip_whitespace(const std::string_view& src) {
 template<typename T>
 auto get_token_of_type(const std::string_view& src) {
   unsigned count = 0;
+
   auto condition = [](const std::string_view& str, unsigned i) {
     if constexpr (std::is_floating_point<T>{}) {
       char token = str[i];
@@ -60,12 +58,8 @@ auto get_token_of_type(const std::string_view& src) {
           return scan_result::error;
         }
       }
-      if (token == '.' ) {
-        if (std::find(str.begin(), str.begin() + i, token) != str.begin() + i) {
-          return scan_result::error;
-        }
-      }
-      if (!std::isdigit(token)) {
+
+      if (!std::isdigit(token) && token != '.') {
         return scan_result::stop_scanning;
       }
       return scan_result::continue_scanning;
@@ -95,7 +89,12 @@ auto get_token_of_type(const std::string_view& src) {
   }
 
   auto token = src.substr(0, count);
-  // src.remove_prefix(count);
+
+  if constexpr (std::is_floating_point<T>{}) {
+    if (std::count(token.begin(), token.end(), '.') > 1) {
+      return std::string_view();
+    }
+  }
   return token;
 }
 
@@ -120,11 +119,9 @@ auto scan_for_end_token(TokenT open, TokenT close, const T& src) {
   return count;
 }
 
-// TODO Wrong
 // Assumes that the first open token is already passed
 template<typename TokenT, typename T>
 auto count_outer_element_until_end(TokenT token, TokenT open, TokenT close, const T& src) {
-  // Scan src
   unsigned token_depth = 0;
   unsigned count = 0;
   unsigned token_count = 0;
@@ -137,12 +134,11 @@ auto count_outer_element_until_end(TokenT token, TokenT open, TokenT close, cons
       if (token_depth > 0) {
         --token_depth;
       } else {
-        // we're done
         return token_count;
       }
     }
   } while (count++ < src.size());
-  // isn't this an error?
+  // may want to indicate an error here
   return token_count;
 }
 
@@ -199,7 +195,6 @@ auto serialize(const T& src, std::string& dst) {
     dst + "] ";
     return serialize_result::success;
   } else if constexpr (meta::Record<MetaT>) {
-    // If this is a record, we can fold over the members.
     dst += "{ ";
 
     meta::for_each<meta::get_data_members_m<MetaT>>(
@@ -207,9 +202,9 @@ auto serialize(const T& src, std::string& dst) {
         using MetaInfo = std::decay_t<decltype(member_info)>;
         dst += std::string("\"") + meta::get_base_name_v<MetaInfo> + "\"" + " : ";
         if (serialize(src.*meta::get_pointer<MetaInfo>::value, dst) != serialize_result::success) {
+          // TODO: error handling
           // return false;
         }
-        // TODO Check if we're the last member
         dst += ", ";
       });
     // take off the last character
@@ -249,32 +244,34 @@ std::string deserialize_result_message(deserialize_result result) {
 // TODO: better error code
 template<typename T>
 auto deserialize(std::string_view& src, T& dst) {
-  // TODO strip all the whitespace from src OR ignore whitespace tokens
   using MetaT = reflexpr(T);
   if (src.empty()) {
     return deserialize_result::empty_input;
   }
   if constexpr (std::is_same<T, std::string>{}) {
-    if (src[0] != '\"') {
+    // Scan until the first quote
+    auto quote_index = std::find(src.begin(), src.end(), '"');
+
+    if (quote_index == src.end()) {
       return deserialize_result::malformed_input;
     }
-    if (auto index = std::find(src.begin() + 1, src.end(), '\"') - src.begin(); index != src.size()) {
-      dst = src.substr(1, index - 1);
-      src.remove_prefix(index + 1);
+    src.remove_prefix(quote_index - src.begin() + 1);
+
+    if (auto it = std::find(src.begin(), src.end(), '"'); it != src.end()) {
+      auto index = it - src.begin();
+      dst = src.substr(0, index);
       return deserialize_result::success;
     }
     return deserialize_result::malformed_input;
   } else if constexpr (std::is_same<T, bool>{}) {
-    if (src.substr(0, 4) == "true") {
+    if (strip_whitespace(src).substr(0, 4) == "true") {
       dst = true;
-      src.remove_prefix(4);
       return deserialize_result::success;
-    } else if (src.substr(0, 5) == "false") {
+    } else if (strip_whitespace(src).substr(0, 5) == "false") {
       dst = false;
-      src.remove_prefix(5);
       return deserialize_result::success;
     }
-    return false;
+    return deserialize_result::malformed_input;
   } else if constexpr (std::is_arithmetic<T>{}) {
     auto stripped = strip_whitespace(src);
     auto token = get_token_of_type<T>(std::move(stripped));
@@ -282,6 +279,7 @@ auto deserialize(std::string_view& src, T& dst) {
     if (token_count == 0) {
       return deserialize_result::malformed_input;
     }
+
     dst = boost::lexical_cast<T>(token);
     return deserialize_result::success;
   } else if constexpr (is_detected<iterable, T>{}) {
@@ -341,24 +339,19 @@ auto deserialize(std::string_view& src, T& dst) {
     for (unsigned i = 0; i < meta::get_size<meta::get_data_members_m<MetaT>>{}; ++i) {
       auto key_index = std::find(object_token.begin(), object_token.end(), ':') - object_token.begin();
 
-      // extract the key
-      // ignore whitespace around the ends
       auto quote_index = std::find(object_token.begin(), object_token.begin() + key_index, '"') - object_token.begin();
       object_token.remove_prefix(quote_index + 1);
       quote_index = std::find(object_token.begin(), object_token.begin() + key_index, '"') - object_token.begin();
-      // find the quotes
+
       auto key = object_token.substr(0, quote_index);
       key_index = std::find(object_token.begin(), object_token.end(), ':') - object_token.begin();
       object_token.remove_prefix(key_index + 1);
 
-      // this is pretty much fine
       auto value_index = std::find(object_token.begin(), object_token.end(), ',') - object_token.begin();
       auto value_token = object_token.substr(0, value_index);
       object_token.remove_prefix(value_index);
 
-      // TODO Dealing with return value
-      // TODO: This isn't working!
-      // need to match the key with all strings
+      // TODO propagate return value!
       meta::for_each<meta::get_data_members_m<MetaT>>(
         [&dst, &key, &value_token](auto&& metainfo) {
           using MetaInfo = std::decay_t<decltype(metainfo)>;
