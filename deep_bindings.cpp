@@ -1,6 +1,8 @@
 /* Idea: implement language-level "deep structured bindings" (destructuring of arbitrary nested POD types)
  * */
 
+#define DECOMPOSE 
+
 struct foo {
   std::string bar;
   int baz;
@@ -20,7 +22,9 @@ foo_result foo_factory() {
 }
 
 int main() {
-  DECOMPOSE(int x, foo{std::string y, int z}) = foo_factory();
+  DECOMPOSE(
+    (int, x),
+    DECOMPOSE(foo, (std::string, y), (int, z))) = foo_factory();
   std::cout << x << "\n";
   std::cout << y << "\n";
   std::cout << z << "\n";

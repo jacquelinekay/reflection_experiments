@@ -74,6 +74,7 @@ namespace reflopt {
       }
     };
 
+    // TODO: More direct to just store prefix, member pointer pairs
     static constexpr auto prefix_map =
       std::meta::unpack_sequence_t<
         std::meta::get_data_members_m<MetaOptions>, get_prefix_pairs>::helper();

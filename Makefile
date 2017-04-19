@@ -17,3 +17,6 @@ reflopt: reflopt.cpp
 
 serialization: serialization.cpp
 	$(CXX) $(INCLUDES) $(REFL_FLAGS) serialization.cpp -o serialization
+
+generalized_fold: generalized_fold.cpp
+	$(CXX) $(INCLUDES) $(REFL_FLAGS) generalized_fold.cpp -o generalized_fold

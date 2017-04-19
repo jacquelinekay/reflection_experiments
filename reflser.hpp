@@ -1,155 +1,379 @@
 #pragma once
 
+#include <algorithm>
+#include <string>
 #include <reflexpr>
 
-// TODO: separate into another head
-#include <iostream>
+#include <boost/lexical_cast.hpp>
+
+#include <experimental/type_traits>
 
 #include "refl_utilities.hpp"
+
+
+// TODO: Error handling
 
 namespace reflser {
 
 namespace meta = std::meta;
 namespace refl = jk::refl_utilities;
 
-// Concepts
-/* Define serialization visitor:
- * - an overload set defining how individual types are serialized
- * - contains: internal state that gets modified based on the serialization rules
- * - what's the return type?
- * - how to indicate error?
- *   - have a type to indicate error, and provide an overload for handling that error as an input arg
- * */
-
-/*
 template<typename T>
-constexpr const bool SerializationVisitor;
+using stringable = std::void_t<decltype(std::to_string(std::declval<T>()))>;
 
 template<typename T>
-constexpr const bool DeserializationVisitor;
-*/
+using iterable = std::void_t<
+  decltype(std::declval<T>().begin()), decltype(std::declval<T>().end())>;
 
-// Overloads are a bunch of function objects (probably lambdas) operating on primitive types
-// no generic lambdas in the overload set!
-// TODO: enforce type signatures for serialization and deserialization (ref vs const ref)
-template<typename SerState, typename ...Overloads>
-static constexpr auto make_recursive_visitor(Overloads&&... overloads) {
-  auto overloaded_fns = refl::overload(overloads...);
-  // TODO! perfect capture by move
-  return y_combinator([&overloaded_fns](auto self, auto&& x, SerState state) {
-    using T = decltype(x);
-    constexpr bool callable = std::is_callable<decltype(overloaded_fns)(T, SerState)>{};
-    constexpr bool has_data_members = refl::n_fields<T>{} > 0;
-    static_assert(callable || has_data_members, "Unknown scalar type found, cannot serialize.");
-    if constexpr (callable) {
-      return overloaded_fns(x, state);
-    } else if constexpr (has_data_members) {
-      return fold_over_data_members(x, [&self, &state](auto&& y) { return self(y, state); });
-    }
-  });
+template<typename T>
+using resizable = std::void_t<decltype(std::declval<T>().resize())>;
+
+template<typename T>
+using has_tuple_size = std::void_t<std::tuple_size<T>>;
+
+template<template<typename ...> typename Op, typename... Args>
+using is_detected = std::experimental::is_detected<Op, Args...>;
+
+enum struct scan_result {
+  continue_scanning,
+  stop_scanning,
+  error
+};
+
+// strip the surrounding whitespace
+std::string_view strip_whitespace(const std::string_view& src) {
+  auto i1 = std::find(src.begin(), src.end(), ' ');
+  auto i2 = std::find(i1 + 1, src.end(), ' ');
+  return src.substr(i1 + 1 - src.begin(), i2 - i1);
 }
 
-// archive, prologue, epilogue
-// define some specializations for a particular serialization format
-//
-
-// TODO: Return types.
-//
-template<typename Archive, typename Policy>
-static constexpr auto archive_skeleton() {
-  return y_combinator([](auto self, Archive& archive, auto& src) {
-    using T = std::decay_t<decltype(src)>;
-    using MetaT = reflexpr(T);
-
-    // TODO: Containers.
-    if constexpr (meta::Record<MetaT>) {
-      // this will open/close the record scope. e.g. for json it provides open/close brackets
-      auto s = Policy::record_scope(archive, src);
-
-      // TODO commas though
-      auto ret = meta_fold_over_data_members(src, [&self, &archive](auto&& meta_info, auto&& y) {
-        if constexpr (refl::index_of_metainfo<T, decltype(meta_info)>{} != 0) {
-          Policy::member_delimiter(archive);
-        }
-        Policy::emit_metainfo(archive, meta_info, y);
-        self(archive, y);
-      });
-    } else if constexpr (refl::is_iterable<T>{}) {
-      // TODO Special policy rules?
-      // use iterators
-      auto s = Policy::list_scope(archive, src);
-      for (const auto& x : src) {
-        self(archive, x);
-        if (&x != src.end()) {
-          Policy::list_delimiter(archive);
+// returns the substring 
+// needs to be able to propagate an error
+template<typename T>
+auto get_token_of_type(const std::string_view& src) {
+  unsigned count = 0;
+  auto condition = [](const std::string_view& str, unsigned i) {
+    if constexpr (std::is_floating_point<T>{}) {
+      char token = str[i];
+      if (token == '-') {
+        if (i != 0) {
+          return scan_result::error;
         }
       }
+      if (token == '.' ) {
+        if (std::find(str.begin(), str.begin() + i, token) != str.begin() + i) {
+          return scan_result::error;
+        }
+      }
+      if (!std::isdigit(token)) {
+        return scan_result::stop_scanning;
+      }
+      return scan_result::continue_scanning;
+
+    } else if constexpr (std::is_integral<T>{}) {
+      char token = str[i];
+      if (token == '-') {
+        if constexpr (!std::is_signed<T>{}) {
+          return scan_result::error;
+        } else if (i != 0) {
+          return scan_result::error;
+        }
+      }
+      if (!std::isdigit(token)) {
+        return scan_result::stop_scanning;
+      }
+      return scan_result::continue_scanning;
     } else {
-      archive(src);
-    };
-  });
-};
-
-struct json_policy {
-  // TODO: reverse by switching the operator? omfg
-  // what about whitespace
-  template<typename Archive, typename Record>
-  struct record_scope {
-    // encapsulates prologue/epilogue.
-    record_scope(Archive& a, const Record&) : archive(a) {
-      archive("{\n");
+      return scan_result::error;
     }
-
-    ~record_scope() {
-      archive("}\n");
-    }
-
-    Archive& archive;
   };
 
-  template<typename Archive, typename Record>
-  struct list_scope {
-    // encapsulates prologue/epilogue.
-    list_scope(Archive& a, const Record&) : archive(a) {
-      archive("[\n");
-    }
-
-    ~list_scope() {
-      archive("]\n");
-    }
-
-    Archive& archive;
-  };
-
-  template<typename Archive, typename MetaInfo, typename T>
-  static auto emit_metainfo(Archive& archive, MetaInfo&&, const T& t) {
-    archive(meta::get_base_name<MetaInfo>{}, ": ");
+  scan_result result;
+  while ((result = condition(src, count++)) == scan_result::continue_scanning && count < src.size()) { }
+  if (result == scan_result::error) {
+    return std::string_view();
   }
 
-  template<typename Archive>
-  static auto list_delimiter(Archive& archive) { archive(","); }
+  auto token = src.substr(0, count);
+  // src.remove_prefix(count);
+  return token;
+}
 
-  template<typename Archive>
-  static auto member_delimiter(Archive& archive) { archive(","); }
+template<typename TokenT, typename T>
+auto scan_for_end_token(TokenT open, TokenT close, const T& src) {
+  // Scan src
+  unsigned token_depth = 0;
+  unsigned count = 0;
+  do {
+    if (src[count] == open) {
+      ++token_depth;
+    } else if (src[count] == close) {
+      if (token_depth > 0) {
+        --token_depth;
+      } else {
+        // we're done
+        return count;
+      }
+    }
+  } while (count++ < src.size());
+  // better error indication?
+  return count;
+}
 
+// TODO Wrong
+// Assumes that the first open token is already passed
+template<typename TokenT, typename T>
+auto count_outer_element_until_end(TokenT token, TokenT open, TokenT close, const T& src) {
+  // Scan src
+  unsigned token_depth = 0;
+  unsigned count = 0;
+  unsigned token_count = 0;
+  do {
+    if (src[count] == token && token_depth == 0) {
+      ++token_count;
+    } else if (src[count] == open) {
+      ++token_depth;
+    } else if (src[count] == close) {
+      if (token_depth > 0) {
+        --token_depth;
+      } else {
+        // we're done
+        return token_count;
+      }
+    }
+  } while (count++ < src.size());
+  // isn't this an error?
+  return token_count;
+}
+
+template<typename TokenT, typename T>
+auto scan_outer_element_until(TokenT token, TokenT open, TokenT close, const T& src) {
+  // scan until token found
+  unsigned token_depth = 0;
+  unsigned count = 0;
+  do {
+    if (src[count] == token && token_depth == 0) {
+      return src.substr(0, count);
+    } else if (src[count] == open) {
+      ++token_depth;
+    } else if (src[count] == close) {
+      if (token_depth > 0) {
+        --token_depth;
+      } else {
+        // return src.substr(0, count);
+        return std::string_view();
+      }
+    }
+  } while (count++ < src.size());
+  // better error indication?
+  return std::string_view();
+}
+
+enum struct serialize_result {
+  success,
+  unknown_type
 };
 
-struct OstreamArchive {
-  template<typename ...Args>
-  auto operator()(const Args&... args) {
-    (stream << ... << args);
-  };
+// generic json serialization
+template<typename T>
+auto serialize(const T& src, std::string& dst) {
+  using MetaT = reflexpr(T);
+  if constexpr (std::is_same<T, std::string>{}) {
+    dst += "\"" + src + "\"";
+    return serialize_result::success;
+  } else if constexpr (std::is_same<T, bool>{}) {
+    dst += src ? "true" : "false";
+    return serialize_result::success;
+  } else if constexpr (is_detected<stringable, T>{}) {
+    dst += std::to_string(src);
+    return serialize_result::success;
+  } else if constexpr (is_detected<iterable, T>{}) {
+    // This structure has an array-like layout.
+    dst += "[ ";
+    for (const auto& entry : src) {
+      dst += serialize(entry, dst);
+      if (&entry != src.end()) {
+        dst += ", ";
+      }
+    }
+    dst + "] ";
+    return serialize_result::success;
+  } else if constexpr (meta::Record<MetaT>) {
+    // If this is a record, we can fold over the members.
+    dst += "{ ";
 
-  std::ostream stream;
+    meta::for_each<meta::get_data_members_m<MetaT>>(
+      [&src, &dst](auto&& member_info){
+        using MetaInfo = std::decay_t<decltype(member_info)>;
+        dst += std::string("\"") + meta::get_base_name_v<MetaInfo> + "\"" + " : ";
+        if (serialize(src.*meta::get_pointer<MetaInfo>::value, dst) != serialize_result::success) {
+          // return false;
+        }
+        // TODO Check if we're the last member
+        dst += ", ";
+      });
+    // take off the last character
+    dst.replace(dst.size() - 2, 2, " }");
+    return serialize_result::success;
+  }
+  return serialize_result::unknown_type;
+}
+
+// generic json deserialization
+enum struct deserialize_result {
+  success,
+  empty_input,
+  malformed_input,
+  mismatched_token,
+  mismatched_type,
+  unknown_type
 };
 
-struct IstreamArchive {
-  template<typename ...Args>
-  auto operator()(Args&... args) {
-    (stream >> ... >> args);
-  };
+std::string deserialize_result_message(deserialize_result result) {
+  switch(result) {
+    case deserialize_result::success:
+      return "Success";
+    case deserialize_result::empty_input:
+      return "Input string to deserialize was empty";
+    case deserialize_result::malformed_input:
+      return "Input string to deserialize was malformed";
+    case deserialize_result::mismatched_token:
+      return "A token was mismatched (e.g. missing open or close brace)";
+    case deserialize_result::mismatched_type:
+      return "Type of output didn't match input schema (e.g. wrong number of fields)";
+    case deserialize_result::unknown_type:
+      return "Don't know how to deserialize to output type";
+  }
+}
 
-  std::istream stream;
-};
+// TODO: better error code
+template<typename T>
+auto deserialize(std::string_view& src, T& dst) {
+  // TODO strip all the whitespace from src OR ignore whitespace tokens
+  using MetaT = reflexpr(T);
+  if (src.empty()) {
+    return deserialize_result::empty_input;
+  }
+  if constexpr (std::is_same<T, std::string>{}) {
+    if (src[0] != '\"') {
+      return deserialize_result::malformed_input;
+    }
+    if (auto index = std::find(src.begin() + 1, src.end(), '\"') - src.begin(); index != src.size()) {
+      dst = src.substr(1, index - 1);
+      src.remove_prefix(index + 1);
+      return deserialize_result::success;
+    }
+    return deserialize_result::malformed_input;
+  } else if constexpr (std::is_same<T, bool>{}) {
+    if (src.substr(0, 4) == "true") {
+      dst = true;
+      src.remove_prefix(4);
+      return deserialize_result::success;
+    } else if (src.substr(0, 5) == "false") {
+      dst = false;
+      src.remove_prefix(5);
+      return deserialize_result::success;
+    }
+    return false;
+  } else if constexpr (std::is_arithmetic<T>{}) {
+    auto stripped = strip_whitespace(src);
+    auto token = get_token_of_type<T>(std::move(stripped));
+    auto token_count = token.size();
+    if (token_count == 0) {
+      return deserialize_result::malformed_input;
+    }
+    dst = boost::lexical_cast<T>(token);
+    return deserialize_result::success;
+  } else if constexpr (is_detected<iterable, T>{}) {
+    if (src[0] != '[') {
+      return deserialize_result::malformed_input;
+    }
+    auto array_end = scan_for_end_token('[', ']', src);
+    if (array_end == src.size()) {
+      return deserialize_result::mismatched_token;
+    }
+
+    auto array_token = src.substr(1, array_end);
+
+    auto n_elements = count_outer_element_until_end(',', '[', ']', array_token);
+
+    if constexpr (is_detected<resizable, T>{}) {
+      dst.resize(n_elements);
+      // TODO case where the container has dynamic size and is not default-constructible
+    } else if constexpr (is_detected<has_tuple_size, T>{}) {
+      if (std::tuple_size<T>{} != n_elements) {
+        return deserialize_result::mismatched_type;
+      }
+    }
+
+    for (unsigned index = 0; index < n_elements; index++) {
+
+      auto token = scan_outer_element_until(',', '[', ']', array_token);
+      if (auto result = deserialize(token, dst[index]); result != deserialize_result::success) {
+        return result;
+      }
+      // remove 1 for the comma (or ] if we're the last one)
+      array_token.remove_prefix(token.size() + 1);
+    }
+
+    src.remove_prefix(array_token.size());
+  } else if constexpr (meta::Record<MetaT>) {
+    if (src[0] != '{') {
+      return deserialize_result::malformed_input;
+    }
+    auto object_end = scan_for_end_token('{', '}', src);
+    if (object_end == src.size()) {
+      return deserialize_result::mismatched_token;
+    }
+    auto object_token = src.substr(1, object_end);
+
+    auto n_colons = count_outer_element_until_end(':', '{', '}', object_token);
+    auto n_commas = count_outer_element_until_end(',', '{', '}', object_token);
+
+    if (n_colons != n_commas + 1) {
+      return deserialize_result::malformed_input;
+    }
+
+    if (n_colons != meta::get_size<meta::get_data_members_m<MetaT>>{}) {
+      return deserialize_result::mismatched_type;
+    }
+
+    for (unsigned i = 0; i < meta::get_size<meta::get_data_members_m<MetaT>>{}; ++i) {
+      auto key_index = std::find(object_token.begin(), object_token.end(), ':') - object_token.begin();
+
+      // extract the key
+      // ignore whitespace around the ends
+      auto quote_index = std::find(object_token.begin(), object_token.begin() + key_index, '"') - object_token.begin();
+      object_token.remove_prefix(quote_index + 1);
+      quote_index = std::find(object_token.begin(), object_token.begin() + key_index, '"') - object_token.begin();
+      // find the quotes
+      auto key = object_token.substr(0, quote_index);
+      key_index = std::find(object_token.begin(), object_token.end(), ':') - object_token.begin();
+      object_token.remove_prefix(key_index + 1);
+
+      // this is pretty much fine
+      auto value_index = std::find(object_token.begin(), object_token.end(), ',') - object_token.begin();
+      auto value_token = object_token.substr(0, value_index);
+      object_token.remove_prefix(value_index);
+
+      // TODO Dealing with return value
+      // TODO: This isn't working!
+      // need to match the key with all strings
+      meta::for_each<meta::get_data_members_m<MetaT>>(
+        [&dst, &key, &value_token](auto&& metainfo) {
+          using MetaInfo = std::decay_t<decltype(metainfo)>;
+          constexpr auto name = meta::get_base_name_v<MetaInfo>;
+          if (key == name) {
+            constexpr auto p = refl::member_pointer<T, name>();
+            deserialize(value_token, dst.*p);
+          }
+        }
+      );
+
+    }
+    return deserialize_result::success;
+  }
+  return deserialize_result::unknown_type;
+}
 
 }  // namespace reflser
