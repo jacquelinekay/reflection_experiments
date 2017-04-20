@@ -1,0 +1,44 @@
+cmake_minimum_required(VERSION 3.5)
+
+project(reflection_experiments VERSION 0.0.1 LANGUAGES CXX)
+include(ExternalProject)
+
+include(cmake/refl_experiments_add_executable.cmake)
+include(cmake/refl_experiments_include_dirs.cmake)
+
+
+unset(refl_keyword)
+if(DEFINED REFLEXPR_PATH)
+  set(refl_keyword "reflexpr" CACHE STRING "key for reflection facility headers")
+  include_directories(${REFLEXPR_PATH})
+elseif(DEFINED ENV{CPP3K_PATH}})
+  set(refl_keyword "cpp3k" CACHE STRING "key for reflection facility headers")
+  include_directories(${CPP3K_PATH}})
+else()
+  message(ERROR "No reflection fork was specified. Unable to build targets using reflection.")
+endif()
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/extlibs/vrm_cmake/cmake/")
+include(vrm_cmake)
+
+# Find `vrm_pp`:
+vrm_cmake_find_extlib(vrm_pp)
+
+# TODO
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/extlibs/hana/cmake/")
+set(HANA_ROOT ${CMAKE_SOURCE_DIR}/extlibs/hana)
+find_package(Hana)
+
+refl_experiments_add_executable(comparisons comparisons.cpp)
+
+if (Hana_FOUND)
+  refl_experiments_add_executable(reflopt reflopt.cpp)
+  refl_experiments_include_dirs(reflopt ${VRM_PP_INC_DIR} ${Boost_INCLUDE_DIR})
+else()
+  message(WARNING "Hana was not found, reflopt example will not be built.")
+endif()
+
+refl_experiments_add_executable(serialization serialization.cpp)
+refl_experiments_add_executable(type_synthesis type_synthesis.cpp)
+
+# TODO: Run tests

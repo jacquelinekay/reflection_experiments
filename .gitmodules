@@ -1,0 +1,9 @@
+[submodule "extlib/vrm_cmake"]
+	path = extlib/vrm_cmake
+	url = https://github.com/SuperV1234/vrm_cmake.git
+[submodule "extlib/vrm_pp"]
+	path = extlib/vrm_pp
+	url = https://github.com/SuperV1234/vrm_pp.git
+[submodule "extlib/hana"]
+	path = extlib/hana
+	url = https://github.com/boostorg/hana
