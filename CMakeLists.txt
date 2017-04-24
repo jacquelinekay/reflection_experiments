@@ -24,21 +24,22 @@ include(vrm_cmake)
 # Find `vrm_pp`:
 vrm_cmake_find_extlib(vrm_pp)
 
-# TODO
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/extlibs/hana/cmake/")
-set(HANA_ROOT ${CMAKE_SOURCE_DIR}/extlibs/hana)
+set(Hana_ROOT "${CMAKE_SOURCE_DIR}/extlibs/hana")
 find_package(Hana)
 
 refl_experiments_add_executable(comparisons comparisons.cpp)
 
 if (Hana_FOUND)
   refl_experiments_add_executable(reflopt reflopt.cpp)
-  refl_experiments_include_dirs(reflopt ${VRM_PP_INC_DIR} ${Boost_INCLUDE_DIR})
+  refl_experiments_include_dirs(reflopt ${VRM_PP_INC_DIR} ${Hana_INCLUDE_DIRS})
 else()
   message(WARNING "Hana was not found, reflopt example will not be built.")
 endif()
 
-refl_experiments_add_executable(serialization serialization.cpp)
-refl_experiments_add_executable(type_synthesis type_synthesis.cpp)
+# refl_experiments_add_executable(serialization serialization.cpp)
+
+# need to revisit if this is worth working on...
+# refl_experiments_add_executable(type_synthesis type_synthesis.cpp)
 
 # TODO: Run tests

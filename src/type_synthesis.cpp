@@ -14,15 +14,19 @@ struct old_type {
 
 int main() {
   using namespace type_synthesis;
+  /*
   using new_type =
       synthesize_type<old_type, add_member<std::string, decltype("bar"_s)>,
                       remove_member<decltype("baz"_s)>>::result;
+  */
+  using new_type = synthesize_type<old_type>(add_member<std::string>("bar"),
+                                                      remove_member("baz"))::result;
 
   // Does not compile: cannot remove qux because it is not a member of the original type.
-  // using new_type = synthesize_type<old_type, remove_member<decltype("qux"_s)>>::result;
+  // using new_type = synthesize_type<old_type>(remove_member("qux"_s));
 
   // Does not compile: foo is already a member of the original type, we can't add it.
-  // using new_type = synthesize_type<old_type, add_member<char, decltype("foo"_s)>>::result;
+  // using new_type = synthesize_type<old_type(add_member<char>("foo"));
 
   new_type x;
 

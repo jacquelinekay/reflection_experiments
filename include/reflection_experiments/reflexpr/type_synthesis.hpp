@@ -6,6 +6,8 @@
 #include "refl_utilities.hpp"
 #include "string_literal.hpp"
 
+// should I just rewrite this with Hana?
+
 namespace type_synthesis {
 
 namespace refl = jk::refl_utilities;
@@ -150,7 +152,10 @@ template <typename T, typename Operator, typename... Operations>
 struct synthesize_type<T, Operator, Operations...> {
   using result = typename Operator::template apply<
       typename synthesize_type<T, Operations...>::result>;
+
+  constexpr synthesize_type(Operator&&, Operations&&...) { }
 };
+
 template <typename T> struct synthesize_type<T> {
   using result = synthesized_type<T>;
 };
@@ -159,7 +164,10 @@ template <typename T> struct synthesize_type<T> {
  * */
 // Add a member of type T and name Name
 //  TODO: Static assert that member is not already in the field
-template <typename Field, typename PackIndex> struct add_member {
+template <typename FieldType> struct add_member {
+  constexpr add_member(const string_literal& name) {
+    // TODO
+  };
 
   template <typename T, typename TupleT> struct meta_tuple_cat;
 

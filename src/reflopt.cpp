@@ -1,10 +1,14 @@
 /* Demo: Specify a struct for command line arguments
  * */
 
-// TODO: pare down includes
-
 #include "reflopt.hpp"
 #include <iostream>
+
+#define meh(Identifier, Content) \
+  STRING_TYPE_DECL(Identifier ## _tag, #Content)
+
+meh(foo, "foo")
+foo_tag a{};
 
 struct ProgramOptions {
   REFLOPT_OPTION(std::string, filename, "--filename");

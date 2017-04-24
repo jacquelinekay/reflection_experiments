@@ -62,10 +62,6 @@ using member_pack_as_tuple = std::tuple<
 template<typename T>
 struct n_fields : meta::get_size<meta::get_data_members_m<reflexpr(T)>> {};
 
-template<typename MemberName, typename ...MetaField>
-struct has_member_pack : std::bool_constant<((sl::compare<MemberName>(
-    meta::get_base_name_v<MetaField>)) || ...)> { };
-
 // generic meta-object fold
 template<typename ...Object>
 struct runtime_fold_helper {
@@ -83,37 +79,17 @@ auto fold_over_data_members(Func&& func, Init&& init, T&& t) {
 	return meta::unpack_sequence_t<meta::get_data_members_m<MetaT>, runtime_fold_helper>::apply(t, init, func);
 }
 
-template<typename T, typename MemberName>
-struct has_member {
-  template<typename ...MetaFields>
-  using curried_has_member_pack = has_member_pack<MemberName, MetaFields...>;
-
-  static constexpr bool value = meta::unpack_sequence_t<
-    meta::get_member_types_m<reflexpr(T)>, curried_has_member_pack>::value;
+template<typename ...MetaField>
+struct has_member_pack {
+  template<typename StrT>
+  static constexpr bool apply(const StrT& name) {
+    return (sl::equal(name, meta::get_base_name_v<MetaField>) || ...);
+  }
 };
 
-template<typename T, typename MemberName>
-struct get_member {
-  using MetaObj = reflexpr(T);
-
-  template<typename ...MetaField>
-  struct get_member_pack {
-    using field = typename reduce_pack<
-      typename std::conditional<
-        sl::compare<MemberName>(meta::get_base_name_v<MetaField>), MetaField, void*>::type...
-    >::type;
-  };
-  // get the data member with the requested name
-  using MetaField = typename meta::unpack_sequence_t<
-    meta::get_data_members_m<MetaObj>, get_member_pack>::field;
-};
-
-template<typename T, typename MemberName, std::size_t ...i>
-constexpr static std::size_t index_helper(std::index_sequence<i...>) {
-  return ((sl::compare<MemberName>(
-    meta::get_base_name_v<
-      meta::get_element_m<
-        meta::get_data_members_m<reflexpr(T)>, i>>) ? i : 0) + ...);
+template<typename T, typename StrT>
+constexpr bool has_member(const StrT& member_name) {
+  return meta::unpack_sequence_t<meta::get_member_types_m<reflexpr(T)>, has_member_pack>::apply(member_name);
 }
 
 template<typename T, typename MetaInfo, std::size_t ...i>
@@ -124,43 +100,39 @@ constexpr static std::size_t index_metainfo_helper(std::index_sequence<i...>) {
         meta::get_data_members_m<reflexpr(T)>, i>>) ? i : 0) + ...);
 }
 
-template<typename T, typename MemberName>
-struct index_of_member : std::integral_constant<size_t, index_helper<T, MemberName>(
-  std::make_index_sequence<n_fields<T>{}>{})> {};
-
-
-template<typename T, auto NameT, std::size_t ...i>
-constexpr static size_t index_of_helper(std::index_sequence<i...>) {
-  using MetaT = reflexpr(T);
-  return ((NameT == meta::get_base_name_v<meta::get_element_m<meta::get_data_members_m<MetaT>, i>> ? i : 0) + ...);
+template<typename T, typename StrT, std::size_t ...i>
+constexpr static auto index_helper(const StrT& name, std::index_sequence<i...>) {
+  return ((sl::equal<StrT>(name,
+            meta::get_base_name_v<
+              meta::get_element_m<
+                meta::get_data_members_m<reflexpr(T)>, i>
+              >) ? i : 0
+          ) + ...);
 }
 
-template<typename T, auto NameT>
-static constexpr auto index_of() {
-  return index_of_helper<T, NameT>( std::make_index_sequence<n_fields<T>{}>{});
+template<typename T, typename StrT>
+constexpr static auto index_of_member(const StrT& name) {
+  return index_helper<T>(name, std::make_index_sequence<n_fields<T>{}>{});
 }
 
-template<typename T, typename MetaInfo>
-struct index_of_metainfo : std::integral_constant<size_t, index_metainfo_helper<T, MetaInfo>(
-  std::make_index_sequence<n_fields<T>{}>{})> {};
-
-template<typename T, typename MemberName>
-struct get_member_pointer : meta::get_pointer<meta::get_element_m<
-                            meta::get_data_members_m<reflexpr(T)>,
-                            index_of_member<T, MemberName>{}>> { };
-
-// TODO
-template<typename T, auto NameT>
-static constexpr auto member_pointer() {
-  return meta::get_pointer<meta::get_element_m<
-                          meta::get_data_members_m<reflexpr(T)>,
-                          index_of<T, NameT>()>>::value;
+template<typename T, typename StrT>
+constexpr auto get_member_pointer(StrT&&) {
+  return meta::get_pointer<
+    meta::get_element_m<
+      meta::get_data_members_m<reflexpr(T)>,
+      index_of_member<T>(StrT{})
+    >
+  >::value;
 }
 
 template<typename T, typename MemberName>
 struct get_member_type {
-  using type = unreflect_type<meta::get_element_m<
-    meta::get_data_members_m<reflexpr(T)>, index_of_member<T, MemberName>{}>>;
+  using type = unreflect_type<
+    meta::get_element_m<
+      meta::get_data_members_m<reflexpr(T)>,
+      index_of_member<T>(MemberName{})
+    >
+  >;
 };
 
 // free metafunctions for metaobjects
