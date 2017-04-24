@@ -24,6 +24,19 @@ private:
   const unsigned s;
 };
 
+constexpr unsigned length(const char* str)
+{
+  return *str ? 1 + length(str + 1) : 0;
+}
+
+
+template<auto V>
+struct string_constant {
+  static constexpr auto value() {
+    return string_literal(V, length(V));
+  };
+};
+
 // what if this just was the string literal struct
 #define STRING_TYPE_DECL(StructName, ...) \
   struct StructName { \

@@ -37,7 +37,7 @@ else()
   message(WARNING "Hana was not found, reflopt example will not be built.")
 endif()
 
-# refl_experiments_add_executable(serialization serialization.cpp)
+refl_experiments_add_executable(serialization serialization.cpp)
 
 # need to revisit if this is worth working on...
 # refl_experiments_add_executable(type_synthesis type_synthesis.cpp)

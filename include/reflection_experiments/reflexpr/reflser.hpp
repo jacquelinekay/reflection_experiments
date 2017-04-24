@@ -14,6 +14,7 @@ namespace reflser {
 
 namespace meta = std::meta;
 namespace refl = jk::refl_utilities;
+namespace sl = jk::string_literal;
 
 template<typename T>
 using stringable = std::void_t<decltype(std::to_string(std::declval<T>()))>;
@@ -197,19 +198,21 @@ auto serialize(const T& src, std::string& dst) {
   } else if constexpr (meta::Record<MetaT>) {
     dst += "{ ";
 
+    serialize_result result = serialize_result::success;
     meta::for_each<meta::get_data_members_m<MetaT>>(
-      [&src, &dst](auto&& member_info){
+      [&src, &dst, &result](auto&& member_info){
         using MetaInfo = std::decay_t<decltype(member_info)>;
         dst += std::string("\"") + meta::get_base_name_v<MetaInfo> + "\"" + " : ";
-        if (serialize(src.*meta::get_pointer<MetaInfo>::value, dst) != serialize_result::success) {
-          // TODO: error handling
-          // return false;
+        if (result = serialize(src.*meta::get_pointer<MetaInfo>::value, dst); result != serialize_result::success) {
+          return;
         }
         dst += ", ";
       });
     // take off the last character
-    dst.replace(dst.size() - 2, 2, " }");
-    return serialize_result::success;
+    if (result == serialize_result::success) {
+      dst.replace(dst.size() - 2, 2, " }");
+    }
+    return result;
   }
   return serialize_result::unknown_type;
 }
@@ -336,6 +339,7 @@ auto deserialize(std::string_view& src, T& dst) {
       return deserialize_result::mismatched_type;
     }
 
+    deserialize_result result = deserialize_result::success;
     for (unsigned i = 0; i < meta::get_size<meta::get_data_members_m<MetaT>>{}; ++i) {
       auto key_index = std::find(object_token.begin(), object_token.end(), ':') - object_token.begin();
 
@@ -343,7 +347,7 @@ auto deserialize(std::string_view& src, T& dst) {
       object_token.remove_prefix(quote_index + 1);
       quote_index = std::find(object_token.begin(), object_token.begin() + key_index, '"') - object_token.begin();
 
-      auto key = object_token.substr(0, quote_index);
+      const auto key = object_token.substr(0, quote_index);
       key_index = std::find(object_token.begin(), object_token.end(), ':') - object_token.begin();
       object_token.remove_prefix(key_index + 1);
 
@@ -353,16 +357,20 @@ auto deserialize(std::string_view& src, T& dst) {
 
       // TODO propagate return value!
       meta::for_each<meta::get_data_members_m<MetaT>>(
-        [&dst, &key, &value_token](auto&& metainfo) {
+        [&dst, &key, &value_token, &result](auto&& metainfo) {
           using MetaInfo = std::decay_t<decltype(metainfo)>;
           constexpr auto name = meta::get_base_name_v<MetaInfo>;
           if (key == name) {
-            constexpr auto p = refl::member_pointer<T, name>();
-            deserialize(value_token, dst.*p);
+            constexpr auto p = refl::get_member_pointer<T>(sl::string_constant<name>{});
+            if (result = deserialize(value_token, dst.*p); result != deserialize_result::success) {
+              return;
+            }
           }
         }
       );
-
+      if (result != deserialize_result::success) {
+        return result;
+      }
     }
     return deserialize_result::success;
   }
