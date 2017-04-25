@@ -1,5 +1,5 @@
 #pragma once
-#include "string_literal.hpp"
+#include "../string_literal.hpp"
 #include "generalized_fold.hpp"
 #include <reflexpr>
 
@@ -7,40 +7,10 @@
 #include <variant>
 
 namespace jk {
-
 namespace refl_utilities {
 
 namespace sl = string_literal;
 namespace meta = std::meta;
-
-// from http://stackoverflow.com/questions/16337610/how-to-know-if-a-type-is-a-specialization-of-stdvector
-template<typename Test, template<typename...> class Ref>
-struct is_specialization : std::false_type {};
-
-template<template<typename...> class Ref, typename... Args>
-struct is_specialization<Ref<Args...>, Ref>: std::true_type {};
-
-template<typename T>
-using stringable = std::void_t<decltype(std::to_string(std::declval<T>()))>;
-
-template<typename T>
-using iterable = std::void_t<
-  decltype(std::declval<T>().begin()), decltype(std::declval<T>().end())>;
-
-template<typename T>
-using resizable = std::void_t<decltype(std::declval<T>().resize())>;
-
-template<typename T>
-using has_tuple_size = std::void_t<std::tuple_size<T>>;
-
-template<typename T>
-using equality_comparable = std::void_t<decltype(std::declval<T>() == std::declval<T>())>;
-
-template<template<typename ...> typename Op, typename... Args>
-using is_detected = std::experimental::is_detected<Op, Args...>;
-
-// Unwrap type from hana::type_c
-#define UNWRAP_TYPE(TypeWrapper) typename std::decay_t<decltype(TypeWrapper)>::type
 
 template<typename MetaT>
 using unreflect_type = meta::get_reflected_type_t<meta::get_type_m<MetaT>>;
@@ -92,12 +62,26 @@ constexpr bool has_member(const StrT& member_name) {
   return meta::unpack_sequence_t<meta::get_member_types_m<reflexpr(T)>, has_member_pack>::apply(member_name);
 }
 
-template<typename T, typename MetaInfo, std::size_t ...i>
-constexpr static std::size_t index_metainfo_helper(std::index_sequence<i...>) {
-  return (((meta::get_base_name_v<MetaInfo> ==
-    meta::get_base_name_v<
-      meta::get_element_m<
-        meta::get_data_members_m<reflexpr(T)>, i>>) ? i : 0) + ...);
+template<typename MetaT>
+struct index_metainfo_helper {
+  template<typename Id, size_t ...Index>
+  constexpr static auto apply(const Id&, std::index_sequence<Index...>) {
+    return ((sl::equal(Id{},
+              meta::get_base_name_v<
+                meta::get_element_m<
+                  meta::get_data_members_m<MetaT>,
+                  Index
+                >
+              >) ? Index : 0) + ...);
+  }
+};
+
+
+template<typename T, typename Id>
+constexpr static auto get_metainfo_for(const Id&) {
+  using MetaT = reflexpr(T);
+  constexpr auto index = index_metainfo_helper<MetaT>::apply(Id{}, std::make_index_sequence<n_fields<T>{}>{});
+  return meta::get_element_m<meta::get_data_members_m<MetaT>, index>{};
 }
 
 template<typename T, typename StrT, std::size_t ...i>
@@ -168,5 +152,4 @@ void call_for_member(const T& x, const StringT& name, Callable&& callback) {
 }
 
 }  // namespace refl_utilities
-
 }  // namespace jk

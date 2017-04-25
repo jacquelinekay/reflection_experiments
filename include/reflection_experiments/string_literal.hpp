@@ -3,6 +3,8 @@
 #include <array>
 #include <string>
 
+#include <cstring>
+
 namespace jk {
 namespace string_literal {
 
@@ -24,8 +26,7 @@ private:
   const unsigned s;
 };
 
-constexpr unsigned length(const char* str)
-{
+constexpr static unsigned length(const char* str) {
   return *str ? 1 + length(str + 1) : 0;
 }
 
@@ -58,7 +59,6 @@ template<typename Str>
 struct compare_helper {
   template<size_t... I>
   constexpr static bool apply(const char* v, std::index_sequence<I...>) {
-    // TODO: size of value...?
     return ((Str::value().char_at(I) == v[I]) && ...);
   }
 };
@@ -75,7 +75,11 @@ constexpr static bool equal(const Str&, const Str& b) {
 
 template<typename Str>
 constexpr static bool equal(const Str&, const char* b) {
-  return compare_helper<Str>::apply(b, std::make_index_sequence<Str::value().size()>{});
+  if (length(b) != Str::value().size()) {
+    return false;
+  } else {
+    return compare_helper<Str>::apply(b, std::make_index_sequence<Str::value().size()>{});
+  }
 }
 
 }  // namespace string_literal

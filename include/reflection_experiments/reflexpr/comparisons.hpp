@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../meta_utilities.hpp"
 #include "refl_utilities.hpp"
 
 // TODO: generalize for different binary operators and the fold operator
@@ -8,6 +9,7 @@ namespace reflcompare {
 
 namespace meta = std::meta;
 namespace refl = jk::refl_utilities;
+namespace metap = jk::metaprogramming;
 
 template<typename T>
 bool equal(const T& a, const T& b);
@@ -24,7 +26,7 @@ struct compare_fold {
 template<typename T>
 bool equal(const T& a, const T& b) {
   using MetaT = reflexpr(T);
-  if constexpr (refl::is_detected<refl::equality_comparable, T>{}) {
+  if constexpr (metap::is_detected<metap::equality_comparable, T>{}) {
     return a == b;
   } else {
     static_assert(meta::Record<MetaT>,

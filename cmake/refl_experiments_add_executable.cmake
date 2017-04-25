@@ -1,6 +1,6 @@
 function(refl_experiments_add_executable target_name)
   set(full_target ${target_name}_${refl_keyword})
   add_executable(${full_target} src/${target_name}.cpp)
-  target_include_directories(${full_target} PUBLIC include/reflection_experiments/${refl_keyword})
+  target_include_directories(${full_target} PUBLIC include/reflection_experiments)
   target_compile_options(${full_target} PUBLIC "-std=c++1z;-Xclang;-freflection")
 endfunction()

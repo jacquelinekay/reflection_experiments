@@ -4,12 +4,6 @@
 #include "reflopt.hpp"
 #include <iostream>
 
-#define meh(Identifier, Content) \
-  STRING_TYPE_DECL(Identifier ## _tag, #Content)
-
-meh(foo, "foo")
-foo_tag a{};
-
 struct ProgramOptions {
   REFLOPT_OPTION(std::string, filename, "--filename");
   REFLOPT_OPTION(int, iterations, "--iterations", "-i", "Number of times to run the algorithm.") = 100;

@@ -13,6 +13,7 @@
 
 #include "string_literal.hpp"
 #include "refl_utilities.hpp"
+#include "meta_utilities.hpp"
 
 #include <vrm/pp/arg_count.hpp>
 #include <vrm/pp/cat.hpp>
@@ -21,10 +22,18 @@
 #include <iostream>
 #include <boost/hana/length.hpp>
 
+#if USING_REFLEXPR
+#elif USING_CPP3K
+#include "cpp3k/adapt_hana.hpp"
+#else
+NO_REFLECTION_IMPLEMENTATION_FOUND()
+#endif
+
 namespace reflopt {
   static const size_t max_value_length = 128;
 
   namespace refl = jk::refl_utilities;
+  namespace metap = jk::metaprogramming;
   namespace sl = jk::string_literal;
   namespace hana = boost::hana;
 
@@ -42,41 +51,68 @@ namespace reflopt {
 
   template<typename OptionsStruct>
   struct OptionsMap {
-    using MetaOptions = reflexpr(OptionsStruct);
 
+    static constexpr auto collect_flags = [](auto&& x, auto&& field) {
+#if USING_REFLEXPR
+      using T = UNWRAP_TYPE(field);
+#elif USING_CPP3K
+      using T = refl::unreflect_member_t<OptionsStruct, decltype(field)>;
+#endif
+      auto result = hana::insert(
+          x, hana::make_pair(
+            hana::type_c<decltype(T::flag)>, refl::get_metainfo_for<OptionsStruct>(T::identifier)));
+      if constexpr(!sl::empty(T::short_flag)) {
+        return hana::insert(
+          result, hana::make_pair(
+            hana::type_c<decltype(T::short_flag)>, refl::get_metainfo_for<OptionsStruct>(T::identifier)));
+      } else {
+        return result;
+      }
+    };
+
+#if USING_REFLEXPR
+    using MetaOptions = reflexpr(OptionsStruct);
     template<typename... MetaFields>
-    struct get_prefix_pairs {
+    struct make_prefix_map {
       static constexpr auto helper() {
         auto filtered = hana::filter(
           hana::make_tuple(hana::type_c<refl::unreflect_type<MetaFields>>...),
           [](auto&& field) {
             return hana::bool_c<
-              refl::is_specialization<std::decay_t<UNWRAP_TYPE(field)>, Option>{}>;
+              metap::is_specialization<std::decay_t<UNWRAP_TYPE(field)>, Option>{}>;
           }
         );
-        static_assert(!hana::length(filtered) == hana::size_c<0>);
+        static_assert(!hana::length(filtered) == hana::size_c<0>,
+            "No options found. Did you define options with the REFLOPT_OPTION macro?");
         return hana::fold(
           filtered,
           hana::make_map(),
-          [](auto&& x, auto&& field) {
-            // using T = refl::unreflect_type<UNWRAP_TYPE(field)>;
-            using T = UNWRAP_TYPE(field);
-            auto result = hana::insert(
-                x, hana::make_pair(hana::type_c<decltype(T::flag)>, T::identifier));
-            if constexpr(refl::has_member<T>(STRING_LITERAL("short_flag"))
-                         && !sl::empty(T::short_flag)) {
-              return hana::insert(
-                result, hana::make_pair(hana::type_c<decltype(T::short_flag)>, T::identifier));
-            } else {
-              return result;
-            }
-          });
+          collect_flags
+        );
       }
     };
 
     static constexpr auto prefix_map =
       std::meta::unpack_sequence_t<
-        std::meta::get_data_members_m<MetaOptions>, get_prefix_pairs>::helper();
+        std::meta::get_data_members_m<MetaOptions>, make_prefix_map>::helper();
+
+#elif USING_CPP3K
+
+    static constexpr auto filtered = hana::filter(
+        refl::adapt_to_hana($OptionsStruct.member_variables()),
+        [](auto&& field) {
+          using T = refl::unreflect_member_t<OptionsStruct, decltype(field)>;
+          return hana::bool_c<metap::is_specialization<T, Option>{}>;
+        }
+      );
+    static_assert(!hana::length(filtered) == hana::size_c<0>,
+        "No options found. Did you define options with the REFLOPT_OPTION macro?");
+    static constexpr auto prefix_map = hana::fold(
+      filtered,
+      hana::make_map(),
+      collect_flags
+    );
+#endif
     static_assert(!hana::length(hana::keys(prefix_map)) == hana::size_c<0>);
 
     static bool contains(const char* prefix) {
@@ -95,9 +131,16 @@ namespace reflopt {
           using T = UNWRAP_TYPE(key);
           if (sl::equal(T{}, prefix)) {
             constexpr auto id = hana::at_key(prefix_map, hana::type_c<T>);
-            constexpr auto member_pointer = refl::get_member_pointer<OptionsStruct>(id);
 
-            using MemberType = typename refl::get_member_type<OptionsStruct, decltype(id)>::type;
+            // should the map just store the member info
+#if USING_REFLEXPR
+            using MetaInfo = std::decay_t<decltype(id)>;
+            constexpr auto member_pointer = std::meta::get_pointer<MetaInfo>::value;
+            using MemberType = std::meta::get_reflected_type_t<std::meta::get_type_m<MetaInfo>>;
+#elif USING_CPP3K
+            constexpr auto member_pointer = id.pointer();
+            using MemberType = refl::unreflect_member_t<OptionsStruct, decltype(id)>;
+#endif
             options.*member_pointer = boost::lexical_cast<MemberType>(
               value, strnlen(value, max_value_length));
           }

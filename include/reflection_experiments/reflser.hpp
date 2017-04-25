@@ -2,35 +2,33 @@
 
 #include <algorithm>
 #include <string>
-#include <reflexpr>
+#include <string_view>
 
 #include <boost/lexical_cast.hpp>
 
+#include <iostream>
+
+#include "macros.hpp"
+#include "meta_utilities.hpp"
 #include "refl_utilities.hpp"
 
-#include <iostream>
+#if USING_REFLEXPR
+#include <reflexpr>
+#elif USING_CPP3K
+#else
+NO_REFLECTION_IMPLEMENTATION_FOUND()
+#endif
 
 namespace reflser {
 
+#if USING_REFLEXPR
 namespace meta = std::meta;
+#elif USING_CPP3K
+namespace meta = cpp3k::meta;
+#endif
 namespace refl = jk::refl_utilities;
+namespace metap = jk::metaprogramming;
 namespace sl = jk::string_literal;
-
-template<typename T>
-using stringable = std::void_t<decltype(std::to_string(std::declval<T>()))>;
-
-template<typename T>
-using iterable = std::void_t<
-  decltype(std::declval<T>().begin()), decltype(std::declval<T>().end())>;
-
-template<typename T>
-using resizable = std::void_t<decltype(std::declval<T>().resize())>;
-
-template<typename T>
-using has_tuple_size = std::void_t<std::tuple_size<T>>;
-
-template<template<typename ...> typename Op, typename... Args>
-using is_detected = std::experimental::is_detected<Op, Args...>;
 
 enum struct scan_result {
   continue_scanning,
@@ -174,17 +172,16 @@ enum struct serialize_result {
 // generic json serialization
 template<typename T>
 auto serialize(const T& src, std::string& dst) {
-  using MetaT = reflexpr(T);
   if constexpr (std::is_same<T, std::string>{}) {
     dst += "\"" + src + "\"";
     return serialize_result::success;
   } else if constexpr (std::is_same<T, bool>{}) {
     dst += src ? "true" : "false";
     return serialize_result::success;
-  } else if constexpr (is_detected<stringable, T>{}) {
+  } else if constexpr (metap::is_detected<metap::stringable, T>{}) {
     dst += std::to_string(src);
     return serialize_result::success;
-  } else if constexpr (is_detected<iterable, T>{}) {
+  } else if constexpr (metap::is_detected<metap::iterable, T>{}) {
     // This structure has an array-like layout.
     dst += "[ ";
     for (const auto& entry : src) {
@@ -195,10 +192,17 @@ auto serialize(const T& src, std::string& dst) {
     }
     dst + "] ";
     return serialize_result::success;
-  } else if constexpr (meta::Record<MetaT>) {
+#if USING_REFLEXPR
+  } else if constexpr (meta::Record<reflexpr(T)>) {
+#elif USING_CPP3K
+  } else if constexpr (refl::is_member_type<T>()) {
+#endif
     dst += "{ ";
 
     serialize_result result = serialize_result::success;
+
+#if USING_REFLEXPR
+    using MetaT = reflexpr(T);
     meta::for_each<meta::get_data_members_m<MetaT>>(
       [&src, &dst, &result](auto&& member_info){
         using MetaInfo = std::decay_t<decltype(member_info)>;
@@ -208,6 +212,18 @@ auto serialize(const T& src, std::string& dst) {
         }
         dst += ", ";
       });
+#elif USING_CPP3K
+    meta::for_each($T.member_variables(),
+      [&src, &dst, &result](auto&& member) {
+        dst += std::string("\"") + member.name() + "\"" + " : ";
+        if (result = serialize(src.*member.pointer(), dst); result != serialize_result::success) {
+          return;
+        }
+        dst += ", ";
+
+      }
+    );
+#endif
     // take off the last character
     if (result == serialize_result::success) {
       dst.replace(dst.size() - 2, 2, " }");
@@ -247,7 +263,6 @@ std::string deserialize_result_message(deserialize_result result) {
 // TODO: better error code
 template<typename T>
 auto deserialize(std::string_view& src, T& dst) {
-  using MetaT = reflexpr(T);
   if (src.empty()) {
     return deserialize_result::empty_input;
   }
@@ -285,7 +300,7 @@ auto deserialize(std::string_view& src, T& dst) {
 
     dst = boost::lexical_cast<T>(token);
     return deserialize_result::success;
-  } else if constexpr (is_detected<iterable, T>{}) {
+  } else if constexpr (metap::is_detected<metap::iterable, T>{}) {
     if (src[0] != '[') {
       return deserialize_result::malformed_input;
     }
@@ -298,10 +313,10 @@ auto deserialize(std::string_view& src, T& dst) {
 
     auto n_elements = count_outer_element_until_end(',', '[', ']', array_token);
 
-    if constexpr (is_detected<resizable, T>{}) {
+    if constexpr (metap::is_detected<metap::resizable, T>{}) {
       dst.resize(n_elements);
       // TODO case where the container has dynamic size and is not default-constructible
-    } else if constexpr (is_detected<has_tuple_size, T>{}) {
+    } else if constexpr (metap::is_detected<metap::has_tuple_size, T>{}) {
       if (std::tuple_size<T>{} != n_elements) {
         return deserialize_result::mismatched_type;
       }
@@ -318,7 +333,12 @@ auto deserialize(std::string_view& src, T& dst) {
     }
 
     src.remove_prefix(array_token.size());
-  } else if constexpr (meta::Record<MetaT>) {
+#if USING_REFLEXPR
+  } else if constexpr (meta::Record<reflexpr(T)>) {
+    using MetaT = reflexpr(T);
+#elif USING_CPP3K
+  } else if constexpr (refl::is_member_type<T>()) {
+#endif
     if (src[0] != '{') {
       return deserialize_result::malformed_input;
     }
@@ -335,12 +355,17 @@ auto deserialize(std::string_view& src, T& dst) {
       return deserialize_result::malformed_input;
     }
 
+    // TODO: switch for cpp3k
+#if USING_REFLEXPR
     if (n_colons != meta::get_size<meta::get_data_members_m<MetaT>>{}) {
+#elif USING_CPP3K
+    if (n_colons != $T.member_variables().size()) {
+#endif
       return deserialize_result::mismatched_type;
     }
 
     deserialize_result result = deserialize_result::success;
-    for (unsigned i = 0; i < meta::get_size<meta::get_data_members_m<MetaT>>{}; ++i) {
+    for (unsigned i = 0; i < n_colons; ++i) {
       auto key_index = std::find(object_token.begin(), object_token.end(), ':') - object_token.begin();
 
       auto quote_index = std::find(object_token.begin(), object_token.begin() + key_index, '"') - object_token.begin();
@@ -356,6 +381,7 @@ auto deserialize(std::string_view& src, T& dst) {
       object_token.remove_prefix(value_index);
 
       // TODO propagate return value!
+#if USING_REFLEXPR
       meta::for_each<meta::get_data_members_m<MetaT>>(
         [&dst, &key, &value_token, &result](auto&& metainfo) {
           using MetaInfo = std::decay_t<decltype(metainfo)>;
@@ -368,6 +394,18 @@ auto deserialize(std::string_view& src, T& dst) {
           }
         }
       );
+#elif USING_CPP3K
+    meta::for_each($T.member_variables(),
+      [&dst, &key, &value_token, &result](auto&& member) {
+        if (key == member.name()) {
+          // constexpr auto p = member.pointer();
+          if (result = deserialize(value_token, dst.*member.pointer()); result != deserialize_result::success) {
+            return;
+          }
+        }
+      }
+    );
+#endif
       if (result != deserialize_result::success) {
         return result;
       }
