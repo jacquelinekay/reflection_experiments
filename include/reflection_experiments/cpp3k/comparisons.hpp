@@ -17,7 +17,6 @@ bool equal(const T& a, const T& b) {
     bool result = true;
     meta::for_each($T.member_variables(),
       [&a, &b, &result](auto&& member){
-        // constexpr auto ptr = member.pointer();
         result &= equal(a.*member.pointer(), b.*member.pointer());
       }
     );

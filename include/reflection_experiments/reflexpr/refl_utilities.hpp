@@ -62,31 +62,9 @@ constexpr bool has_member(const StrT& member_name) {
   return meta::unpack_sequence_t<meta::get_member_types_m<reflexpr(T)>, has_member_pack>::apply(member_name);
 }
 
-template<typename MetaT>
-struct index_metainfo_helper {
-  template<typename Id, size_t ...Index>
-  constexpr static auto apply(const Id&, std::index_sequence<Index...>) {
-    return ((sl::equal(Id{},
-              meta::get_base_name_v<
-                meta::get_element_m<
-                  meta::get_data_members_m<MetaT>,
-                  Index
-                >
-              >) ? Index : 0) + ...);
-  }
-};
-
-
-template<typename T, typename Id>
-constexpr static auto get_metainfo_for(const Id&) {
-  using MetaT = reflexpr(T);
-  constexpr auto index = index_metainfo_helper<MetaT>::apply(Id{}, std::make_index_sequence<n_fields<T>{}>{});
-  return meta::get_element_m<meta::get_data_members_m<MetaT>, index>{};
-}
-
 template<typename T, typename StrT, std::size_t ...i>
 constexpr static auto index_helper(const StrT& name, std::index_sequence<i...>) {
-  return ((sl::equal<StrT>(name,
+  return ((sl::equal(name,
             meta::get_base_name_v<
               meta::get_element_m<
                 meta::get_data_members_m<reflexpr(T)>, i>
@@ -144,7 +122,7 @@ template<typename T, typename StringT, typename Callable>
 void call_for_member(const T& x, const StringT& name, Callable&& callback) {
   auto wrapped_callback = [&name, &callback](auto&& metainfo) {
     using MetaInfo = std::decay_t<decltype(metainfo)>;
-    if (name == meta::get_base_name_v<MetaInfo>) {
+    if (sl::equal(name, meta::get_base_name_v<MetaInfo>)) {
       callback(metainfo);
     }
   };

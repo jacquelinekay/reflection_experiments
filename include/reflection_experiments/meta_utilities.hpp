@@ -16,20 +16,20 @@ template<template<typename...> class Ref, typename... Args>
 struct is_specialization<Ref<Args...>, Ref>: std::true_type {};
 
 template<typename T>
-using stringable = std::void_t<decltype(std::to_string(std::declval<T>()))>;
+using stringable = decltype(std::to_string(std::declval<T>()));
 
 template<typename T>
 using iterable = std::void_t<
   decltype(std::declval<T>().begin()), decltype(std::declval<T>().end())>;
 
 template<typename T>
-using resizable = std::void_t<decltype(std::declval<T>().resize())>;
+using resizable = decltype(std::declval<T>().resize());
 
 template<typename T>
-using has_tuple_size = std::void_t<std::tuple_size<T>>;
+using has_tuple_size = std::tuple_size<T>;
 
 template<typename T>
-using equality_comparable = std::void_t<decltype(std::declval<T>() == std::declval<T>())>;
+using equality_comparable = decltype(std::declval<T>() == std::declval<T>());
 
 template<template<typename ...> typename Op, typename... Args>
 using is_detected = std::experimental::is_detected<Op, Args...>;

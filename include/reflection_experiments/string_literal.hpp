@@ -20,7 +20,6 @@ struct string_literal {
   constexpr auto size() const { return s; };
   constexpr auto data() const { return value; };
   constexpr auto char_at(unsigned i) const { return value[i]; };
-
 private:
   const char* value;
   const unsigned s;
@@ -46,14 +45,14 @@ struct string_constant {
     } \
   };
 
-
-STRING_TYPE_DECL(empty_string_t, "")
-
 #define STRING_LITERAL(value) \
   []() { \
     using Str = CONSTANT(jk::string_literal::string_literal{value, sizeof(value) - 1}); \
     return Str{}; \
   }() \
+
+#define STRING_LITERAL_VALUE(value) \
+  jk::string_literal::string_literal{value, sizeof(value) - 1}
 
 template<typename Str>
 struct compare_helper {
@@ -81,6 +80,8 @@ constexpr static bool equal(const Str&, const char* b) {
     return compare_helper<Str>::apply(b, std::make_index_sequence<Str::value().size()>{});
   }
 }
+
+STRING_TYPE_DECL(empty_string_t, "")
 
 }  // namespace string_literal
 }  // namespace jk

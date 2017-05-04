@@ -3,6 +3,13 @@
 
 #include "reflopt.hpp"
 #include <iostream>
+#include <boost/hana/string.hpp>
+
+#ifndef BOOST_HANA_CONFIG_ENABLE_STRING_UDL
+static_assert(false, "reflopt example won't work without Hana string literals enabled");
+#endif
+
+using namespace boost::hana::literals;
 
 struct ProgramOptions {
   REFLOPT_OPTION(std::string, filename, "--filename");

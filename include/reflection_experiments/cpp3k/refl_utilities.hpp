@@ -34,21 +34,6 @@ constexpr static bool has_member(StrT&& key) {
   return has_member;
 }
 
-template<typename T>
-struct get_matching_index {
-  template<typename Id, std::size_t ...I>
-  constexpr static std::size_t apply(Id&& id, std::index_sequence<I...>) {
-    return ((sl::equal(id, cpp3k::meta::cget<I>($T.member_variables()).name()) ? I : 0) + ...);
-  }
-};
-
-template<typename T, typename Id>
-constexpr static auto get_metainfo_for(Id&& id) {
-  return cpp3k::meta::cget<
-      get_matching_index<T>::apply(Id{}, std::make_index_sequence<$T.member_variables().size()>{})
-    >($T.member_variables());
-}
-
 template<typename S, typename Member>
 struct unreflect_member {
   using type = std::decay_t<decltype(std::declval<S>().*(std::decay_t<Member>::pointer()))>;

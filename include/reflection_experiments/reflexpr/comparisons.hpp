@@ -7,9 +7,9 @@
 
 namespace reflcompare {
 
-namespace meta = std::meta;
 namespace refl = jk::refl_utilities;
 namespace metap = jk::metaprogramming;
+namespace meta = std::meta;
 
 template<typename T>
 bool equal(const T& a, const T& b);
@@ -18,8 +18,9 @@ template<typename ...MetaMembers>
 struct compare_fold {
   template<typename T>
   static constexpr auto apply(const T& a, const T& b) {
-    return (equal(a.*meta::get_pointer<MetaMembers>::value,
-                  b.*meta::get_pointer<MetaMembers>::value) && ...);
+    return (equal(
+      a.*meta::get_pointer<MetaMembers>::value,
+      b.*meta::get_pointer<MetaMembers>::value) && ...);
   }
 };
 
