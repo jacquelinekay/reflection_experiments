@@ -1,6 +1,5 @@
 #pragma once
 #include "../string_literal.hpp"
-#include "generalized_fold.hpp"
 #include <reflexpr>
 
 #include <experimental/type_traits>

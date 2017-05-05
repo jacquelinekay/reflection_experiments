@@ -94,9 +94,8 @@ namespace reflopt {
   template<typename T, typename Id>
   static constexpr auto get_metainfo_for(Id&& id) {
     constexpr auto N = $T.member_variables().size();
-    return cpp3k::meta::cget<
-        get_matching_index<T>::apply(Id{}, std::make_index_sequence<N>{})
-      >($T.member_variables());
+    constexpr auto I = get_matching_index<T>::apply(Id{}, std::make_index_sequence<N>{});
+    return cpp3k::meta::cget<I>($T.member_variables());
   }
 #endif
 
