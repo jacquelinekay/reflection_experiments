@@ -17,12 +17,12 @@ template<typename T>
 using has_member_variables = std::void_t<decltype($T.member_variables())>;
 
 template<typename T>
-constexpr static bool is_member_type() {
+static constexpr bool is_member_type() {
   return metap::is_detected<has_member_variables, T>{};
 }
 
 template<typename T, typename StrT>
-constexpr static bool has_member(StrT&& key) {
+static constexpr bool has_member(StrT&& key) {
   bool has_member = false;
   meta::for_each($T.member_variables(),
     [&key, &has_member](auto&& member) {
@@ -36,7 +36,8 @@ constexpr static bool has_member(StrT&& key) {
 
 template<typename S, typename Member>
 struct unreflect_member {
-  using type = std::decay_t<decltype(std::declval<S>().*(std::decay_t<Member>::pointer()))>;
+  using type = std::decay_t<
+    decltype(std::declval<S>().*(std::decay_t<Member>::pointer()))>;
 };
 
 template<typename S, typename Member>

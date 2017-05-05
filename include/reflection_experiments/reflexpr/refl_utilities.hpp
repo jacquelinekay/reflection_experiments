@@ -41,14 +41,6 @@ struct runtime_fold_helper {
   }
 };
 
-// Func is a callable of arity 2
-template<typename T, typename Init, typename Func,
-  typename std::enable_if_t<meta::get_size<meta::get_data_members_m<reflexpr(std::decay_t<T>)>>{} >= 1>* = nullptr>
-auto fold_over_data_members(Func&& func, Init&& init, T&& t) {
-  using MetaT = reflexpr(std::decay_t<T>);
-	return meta::unpack_sequence_t<meta::get_data_members_m<MetaT>, runtime_fold_helper>::apply(t, init, func);
-}
-
 template<typename ...MetaField>
 struct has_member_pack {
   template<typename StrT>
@@ -59,21 +51,23 @@ struct has_member_pack {
 
 template<typename T, typename StrT>
 constexpr bool has_member(const StrT& member_name) {
-  return meta::unpack_sequence_t<meta::get_member_types_m<reflexpr(T)>, has_member_pack>::apply(member_name);
+  return meta::unpack_sequence_t<
+    meta::get_member_types_m<reflexpr(T)>, has_member_pack
+  >::apply(member_name);
 }
 
-template<typename T, typename StrT, std::size_t ...i>
-constexpr static auto index_helper(const StrT& name, std::index_sequence<i...>) {
+template<typename T, typename StrT, std::size_t ...I>
+static constexpr auto index_helper(const StrT& name, std::index_sequence<I...>) {
   return ((sl::equal(name,
             meta::get_base_name_v<
               meta::get_element_m<
-                meta::get_data_members_m<reflexpr(T)>, i>
-              >) ? i : 0
+                meta::get_data_members_m<reflexpr(T)>, I>
+              >) ? I : 0
           ) + ...);
 }
 
 template<typename T, typename StrT>
-constexpr static auto index_of_member(const StrT& name) {
+static constexpr auto index_of_member(const StrT& name) {
   return index_helper<T>(name, std::make_index_sequence<n_fields<T>{}>{});
 }
 
@@ -104,30 +98,6 @@ struct get_name {
     return meta::get_base_name<MetaT>{};
   }
 };
-
-
-template<typename T>
-struct members_variant : std::variant<meta::get_data_members_m<reflexpr(T)> > {};
-
-/*
-// return a reference to the field in T that matches the runtime-determined string value
-template<typename T>
-members_variant<T> get_member(const T& x, const std::string_view& name) {
-  // This is a product type-to-sum type mapping
-}
-*/
-
-// TODO think this is wrong
-template<typename T, typename StringT, typename Callable>
-void call_for_member(const T& x, const StringT& name, Callable&& callback) {
-  auto wrapped_callback = [&name, &callback](auto&& metainfo) {
-    using MetaInfo = std::decay_t<decltype(metainfo)>;
-    if (sl::equal(name, meta::get_base_name_v<MetaInfo>)) {
-      callback(metainfo);
-    }
-  };
-  meta::for_each<meta::get_data_members_m<reflexpr(std::decay_t<T>)>>(wrapped_callback);
-}
 
 }  // namespace refl_utilities
 }  // namespace jk

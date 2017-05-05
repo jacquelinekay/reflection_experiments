@@ -47,7 +47,6 @@ namespace reflopt {
   namespace meta = std::meta;
   template<typename MetaT>
   struct index_metainfo_helper {
-
     template<typename Id, size_t I, size_t ...J>
     static constexpr bool equals_member(std::index_sequence<J...>&&) {
       return ((Id{}[hana::size_c<J>] == meta::get_base_name_v<
@@ -61,7 +60,7 @@ namespace reflopt {
     template<typename Id, size_t ...Index>
     static constexpr auto apply(Id&&, std::index_sequence<Index...>) {
       return ((equals_member<Id, Index>(
-              std::make_index_sequence<hana::length(Id{})>{}) ? Index : 0) + ...);
+               std::make_index_sequence<hana::length(Id{})>{}) ? Index : 0) + ...);
     }
   };
 
@@ -76,21 +75,25 @@ namespace reflopt {
   namespace meta = cpp3k::meta;
   template<typename T, typename Id, size_t I, size_t ...J>
   static constexpr bool equals_member(std::index_sequence<J...>&&) {
-    return ((Id{}[hana::size_c<J>] == cpp3k::meta::cget<I>($T.member_variables()).name()[J]) && ...);
+    return ((Id{}[hana::size_c<J>] ==
+             cpp3k::meta::cget<I>($T.member_variables()).name()[J]) && ...);
   }
 
   template<typename T>
   struct get_matching_index {
     template<typename Id, std::size_t ...I>
     static constexpr std::size_t apply(Id&& id, std::index_sequence<I...>) {
-      return ((equals_member<T, Id, I>(std::make_index_sequence<hana::length(Id{})>{}) ? I : 0) + ...);
+      constexpr auto N = hana::length(Id{});
+      return ((equals_member<T, Id, I>(
+               std::make_index_sequence<N>{}) ? I : 0) + ...);
     }
   };
 
   template<typename T, typename Id>
   static constexpr auto get_metainfo_for(Id&& id) {
+    constexpr auto N = $T.member_variables().size();
     return cpp3k::meta::cget<
-        get_matching_index<T>::apply(Id{}, std::make_index_sequence<$T.member_variables().size()>{})
+        get_matching_index<T>::apply(Id{}, std::make_index_sequence<N>{})
       >($T.member_variables());
   }
 #endif
@@ -104,15 +107,8 @@ namespace reflopt {
     static constexpr Help help;
   };
 
-  template<typename Id, typename Flag, typename ShortFlag, typename Help>
-  constexpr decltype(auto) make_option(
-      Id&& id, Flag&& flag, ShortFlag&& short_flag, Help&& help) {
-    return Option<std::decay_t<Id>, std::decay_t<Flag>, std::decay_t<ShortFlag>, std::decay_t<Help>>{};
-  }
-
   template<typename OptionsStruct>
   struct OptionsMap {
-
     static constexpr auto collect_flags = [](auto&& x, auto&& field) {
 #if USING_REFLEXPR
       using T = UNWRAP_TYPE(field);
@@ -153,15 +149,15 @@ namespace reflopt {
       }
     };
 
-    static constexpr auto prefix_map =
-      std::meta::unpack_sequence_t<
-        std::meta::get_data_members_m<MetaOptions>, make_prefix_map>::helper();
+    static constexpr auto prefix_map = meta::unpack_sequence_t<
+      meta::get_data_members_m<MetaOptions>, make_prefix_map>::helper();
 
 #elif USING_CPP3K
     static constexpr auto filtered = hana::filter(
         refl::adapt_to_hana($OptionsStruct.member_variables()),
         [](auto&& field) {
-          using T = refl::unreflect_member_t<OptionsStruct, std::decay_t<decltype(field)>>;
+          using T = refl::unreflect_member_t<
+            OptionsStruct, std::decay_t<decltype(field)>>;
           return hana::bool_c<metap::is_specialization<T, Option>{}>;
         }
       );
@@ -190,12 +186,10 @@ namespace reflopt {
         [&options, &prefix, &value](auto&& key) {
           if (runtime_string_compare(key, prefix)) {
             constexpr auto info = hana::at_key(prefix_map, std::decay_t<decltype(key)>{});
-
-            // should the map just store the member info
 #if USING_REFLEXPR
             using MetaInfo = std::decay_t<decltype(info)>;
-            constexpr auto member_pointer = std::meta::get_pointer<MetaInfo>::value;
-            using MemberType = std::meta::get_reflected_type_t<std::meta::get_type_m<MetaInfo>>;
+            constexpr auto member_pointer = meta::get_pointer<MetaInfo>::value;
+            using MemberType = meta::get_reflected_type_t<meta::get_type_m<MetaInfo>>;
 #elif USING_CPP3K
             constexpr auto member_pointer = info.pointer();
             using MemberType = refl::unreflect_member_t<OptionsStruct, decltype(info)>;
@@ -242,7 +236,9 @@ struct hana_string_from_literal {
   decltype(Literal ## _s)
 
 #define REFLOPT_OPTION_HELPER(Type, Identifier, Flag, ShortFlag, Help) \
-  reflopt::Option<BOOST_HANA_STRING_T(#Identifier), BOOST_HANA_STRING_T(Flag), BOOST_HANA_STRING_T(ShortFlag), BOOST_HANA_STRING_T(Help)> reflopt_ ## Identifier ## _tag; \
+  reflopt::Option<BOOST_HANA_STRING_T(#Identifier), BOOST_HANA_STRING_T(Flag), \
+      BOOST_HANA_STRING_T(ShortFlag), BOOST_HANA_STRING_T(Help)> \
+    reflopt_ ## Identifier ## _tag; \
   Type Identifier
 
 #define REFLOPT_OPTION_3(Type, Identifier, Flag) \

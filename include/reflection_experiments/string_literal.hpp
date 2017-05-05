@@ -25,7 +25,7 @@ private:
   const unsigned s;
 };
 
-constexpr static unsigned length(const char* str) {
+static constexpr unsigned length(const char* str) {
   return *str ? 1 + length(str + 1) : 0;
 }
 
@@ -57,27 +57,28 @@ struct string_constant {
 template<typename Str>
 struct compare_helper {
   template<size_t... I>
-  constexpr static bool apply(const char* v, std::index_sequence<I...>) {
+  static constexpr bool apply(const char* v, std::index_sequence<I...>) {
     return ((Str::value().char_at(I) == v[I]) && ...);
   }
 };
 
 template<typename Str>
-constexpr static bool empty(const Str&) {
+static constexpr bool empty(const Str&) {
   return Str::value().size() == 0;
 }
 
 template<typename Str>
-constexpr static bool equal(const Str&, const Str& b) {
+static constexpr bool equal(const Str&, const Str& b) {
   return Str::value().data() == b.value().data();
 }
 
 template<typename Str>
-constexpr static bool equal(const Str&, const char* b) {
+static constexpr bool equal(const Str&, const char* b) {
   if (length(b) != Str::value().size()) {
     return false;
   } else {
-    return compare_helper<Str>::apply(b, std::make_index_sequence<Str::value().size()>{});
+    return compare_helper<Str>::apply(
+      b, std::make_index_sequence<Str::value().size()>{});
   }
 }
 
