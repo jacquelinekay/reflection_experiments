@@ -6,8 +6,6 @@
 
 #include <boost/lexical_cast.hpp>
 
-#include <iostream>
-
 #include "macros.hpp"
 #include "meta_utilities.hpp"
 #include "refl_utilities.hpp"
@@ -308,7 +306,6 @@ auto deserialize(std::string_view& src, T& dst) {
     auto quote_index = std::find(src.begin(), src.end(), '"');
 
     if (quote_index == src.end()) {
-      std::cout << "couldn't find quote: " << src << "\n";
       return deserialize_result::malformed_input;
     }
     src.remove_prefix(quote_index - src.begin() + 1);
@@ -318,7 +315,6 @@ auto deserialize(std::string_view& src, T& dst) {
       dst = src.substr(0, index);
       return deserialize_result::success;
     }
-    std::cout << "couldn't find quote: " << src << "\n";
     return deserialize_result::malformed_input;
   } else if constexpr (std::is_same<T, bool>{}) {
     if (strip_whitespace(src).substr(0, 4) == "true") {
@@ -385,9 +381,7 @@ auto deserialize(std::string_view& src, T& dst) {
   } else if constexpr (refl::is_member_type<T>()) {
 #endif
     auto stripped = strip_whitespace(src);
-    std::cout << "stripped: [" << stripped << "]\n";
     if (stripped[0] != '{') {
-      std::cout << "got malformed token when { was expected: " << stripped << "\n";
       return deserialize_result::malformed_input;
     }
     auto object_end = scan_for_end_token('{', '}', stripped);
@@ -400,7 +394,6 @@ auto deserialize(std::string_view& src, T& dst) {
     auto n_commas = count_outer_element_until_end(',', "{[", "}]", object_token);
 
     if (n_colons != n_commas + 1) {
-      std::cout << "n_colons (" << n_colons << ") != n_commas (" << n_commas << ") in: " << object_token << "\n";
       return deserialize_result::malformed_input;
     }
 
