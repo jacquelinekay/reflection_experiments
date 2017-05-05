@@ -437,16 +437,16 @@ auto deserialize(std::string_view& src, T& dst) {
         }
       );
 #elif USING_CPP3K
-    meta::for_each($T.member_variables(),
-      [&dst, &key, &value_token, &result](auto&& member) {
-        if (key == member.name()) {
-          if (result = deserialize(value_token, dst.*member.pointer());
-              result != deserialize_result::success) {
-            return;
+      meta::for_each($T.member_variables(),
+        [&dst, &key, &value_token, &result](auto&& member) {
+          if (key == member.name()) {
+            if (result = deserialize(value_token, dst.*member.pointer());
+                result != deserialize_result::success) {
+              return;
+            }
           }
         }
-      }
-    );
+      );
 #endif
       if (result != deserialize_result::success) {
         return result;
