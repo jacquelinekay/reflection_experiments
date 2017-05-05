@@ -20,6 +20,8 @@
 
 #include <boost/hana/length.hpp>
 
+#include <iostream>
+
 #if USING_REFLEXPR
 #elif USING_CPP3K
 #include "cpp3k/adapt_hana.hpp"
@@ -202,8 +204,12 @@ namespace reflopt {
     }
   };
 
-  template<typename OptionsStruct>
-  optional_t<OptionsStruct> parse(int argc, char** argv) {
+  // ArgVT boilerplate is to enable both char** and const char*[]'s for testing
+  template<typename OptionsStruct, typename ArgVT,
+    typename std::enable_if_t<
+      std::is_same<ArgVT, char**>{} || std::is_same<ArgVT, const char**>{}>* = nullptr
+  >
+  optional_t<OptionsStruct> parse(int argc, ArgVT const argv) {
     OptionsStruct options;
     for (int i = 1; i < argc; i += 2) {
       if (OptionsMap<OptionsStruct>::contains(argv[i])) {

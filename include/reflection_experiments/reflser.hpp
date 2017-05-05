@@ -37,10 +37,29 @@ enum struct scan_result {
 };
 
 // strip the surrounding whitespace
+// TODO: other characters besides ' '
 std::string_view strip_whitespace(const std::string_view& src) {
-  auto i1 = std::find(src.begin(), src.end(), ' ');
-  auto i2 = std::find(i1 + 1, src.end(), ' ');
-  return src.substr(i1 + 1 - src.begin(), i2 - i1);
+  unsigned i1 = 0;
+  if (src[i1] == ' ') {
+    for (; i1 < src.size() - 1; i1++) {
+      if (src[i1] != ' ' || src[i1 + 1] != ' ') {
+        i1 += 1;
+        break;
+      }
+    }
+  }
+
+  unsigned i2 = src.size();
+  if (src[i2 - 1] == ' ') {
+    for (i2 = src.size() - 2; i2 > 0; i2--) {
+      if (src[i2] != ' ') {
+        i2 += 1;
+        break;
+      }
+    }
+  }
+
+  return src.substr(i1, i2 - i1);
 }
 
 // returns the substring 
@@ -120,16 +139,18 @@ auto scan_for_end_token(TokenT open, TokenT close, const T& src) {
 
 // Assumes that the first open token is already passed
 template<typename TokenT, typename T>
-auto count_outer_element_until_end(TokenT token, TokenT open, TokenT close, const T& src) {
+auto count_outer_element_until_end(TokenT token,
+    const std::string_view& open_tokens, const std::string_view& close_tokens,
+    const T& src) {
   unsigned token_depth = 0;
   unsigned count = 0;
   unsigned token_count = 0;
   do {
     if (src[count] == token && token_depth == 0) {
       ++token_count;
-    } else if (src[count] == open) {
+    } else if (open_tokens.find(src[count]) != std::string::npos) {
       ++token_depth;
-    } else if (src[count] == close) {
+    } else if (close_tokens.find(src[count]) != std::string::npos) {
       if (token_depth > 0) {
         --token_depth;
       } else {
@@ -142,24 +163,26 @@ auto count_outer_element_until_end(TokenT token, TokenT open, TokenT close, cons
 }
 
 template<typename TokenT, typename T>
-auto scan_outer_element_until(TokenT token, TokenT open, TokenT close, const T& src) {
+auto scan_outer_element_until(TokenT token,
+    const std::string_view& open_tokens, const std::string_view& close_tokens,
+    const T& src) {
   // scan until token found
   unsigned token_depth = 0;
   unsigned count = 0;
   do {
     if (src[count] == token && token_depth == 0) {
       return src.substr(0, count);
-    } else if (src[count] == open) {
+    } else if (open_tokens.find(src[count]) != std::string::npos) {
       ++token_depth;
-    } else if (src[count] == close) {
+    } else if (close_tokens.find(src[count]) != std::string::npos) {
       if (token_depth > 0) {
         --token_depth;
       } else {
-        // return src.substr(0, count);
-        return std::string_view();
+        return src.substr(0, count);
       }
     }
   } while (count++ < src.size());
+
   // better error indication?
   return std::string_view();
 }
@@ -168,6 +191,15 @@ enum struct serialize_result {
   success,
   unknown_type
 };
+
+std::string serialize_result_message(serialize_result result) {
+  switch(result) {
+    case serialize_result::success:
+      return "Success";
+    case serialize_result::unknown_type:
+      return "Don't know how to serialize to output type";
+  }
+}
 
 // generic json serialization
 template<typename T>
@@ -184,13 +216,17 @@ auto serialize(const T& src, std::string& dst) {
   } else if constexpr (metap::is_detected<metap::iterable, T>{}) {
     // This structure has an array-like layout.
     dst += "[ ";
-    for (const auto& entry : src) {
-      dst += serialize(entry, dst);
-      if (&entry != src.end()) {
+    for (auto it = src.begin(); it != src.end(); ++it) {
+      auto entry = *it;
+      auto result = serialize(entry, dst);
+      if (result != serialize_result::success) {
+        return result;
+      }
+      if (it != (src.end() - 1)) {
         dst += ", ";
       }
     }
-    dst + "] ";
+    dst += " ]";
     return serialize_result::success;
 #if USING_REFLEXPR
   } else if constexpr (meta::Record<reflexpr(T)>) {
@@ -207,7 +243,8 @@ auto serialize(const T& src, std::string& dst) {
       [&src, &dst, &result](auto&& member_info){
         using MetaInfo = std::decay_t<decltype(member_info)>;
         dst += std::string("\"") + meta::get_base_name_v<MetaInfo> + "\"" + " : ";
-        if (result = serialize(src.*meta::get_pointer<MetaInfo>::value, dst); result != serialize_result::success) {
+        if (result = serialize(src.*meta::get_pointer<MetaInfo>::value, dst);
+            result != serialize_result::success) {
           return;
         }
         dst += ", ";
@@ -216,11 +253,11 @@ auto serialize(const T& src, std::string& dst) {
     meta::for_each($T.member_variables(),
       [&src, &dst, &result](auto&& member) {
         dst += std::string("\"") + member.name() + "\"" + " : ";
-        if (result = serialize(src.*member.pointer(), dst); result != serialize_result::success) {
+        if (result = serialize(src.*member.pointer(), dst);
+            result != serialize_result::success) {
           return;
         }
         dst += ", ";
-
       }
     );
 #endif
@@ -271,6 +308,7 @@ auto deserialize(std::string_view& src, T& dst) {
     auto quote_index = std::find(src.begin(), src.end(), '"');
 
     if (quote_index == src.end()) {
+      std::cout << "couldn't find quote: " << src << "\n";
       return deserialize_result::malformed_input;
     }
     src.remove_prefix(quote_index - src.begin() + 1);
@@ -280,6 +318,7 @@ auto deserialize(std::string_view& src, T& dst) {
       dst = src.substr(0, index);
       return deserialize_result::success;
     }
+    std::cout << "couldn't find quote: " << src << "\n";
     return deserialize_result::malformed_input;
   } else if constexpr (std::is_same<T, bool>{}) {
     if (strip_whitespace(src).substr(0, 4) == "true") {
@@ -291,8 +330,7 @@ auto deserialize(std::string_view& src, T& dst) {
     }
     return deserialize_result::malformed_input;
   } else if constexpr (std::is_arithmetic<T>{}) {
-    auto stripped = strip_whitespace(src);
-    auto token = get_token_of_type<T>(std::move(stripped));
+    auto token = get_token_of_type<T>(strip_whitespace(src));
     auto token_count = token.size();
     if (token_count == 0) {
       return deserialize_result::malformed_input;
@@ -301,17 +339,21 @@ auto deserialize(std::string_view& src, T& dst) {
     dst = boost::lexical_cast<T>(token);
     return deserialize_result::success;
   } else if constexpr (metap::is_detected<metap::iterable, T>{}) {
-    if (src[0] != '[') {
+    // TODO src is wrong
+    // TODO strip_whitespace is too aggressive
+    auto stripped = strip_whitespace(src);
+    if (stripped[0] != '[') {
       return deserialize_result::malformed_input;
     }
-    auto array_end = scan_for_end_token('[', ']', src);
-    if (array_end == src.size()) {
+    stripped.remove_prefix(1);
+    auto array_end = scan_for_end_token('[', ']', stripped);
+    if (array_end <= 1) {
       return deserialize_result::mismatched_token;
     }
 
-    auto array_token = src.substr(1, array_end);
+    auto array_token = stripped.substr(0, array_end);
 
-    auto n_elements = count_outer_element_until_end(',', '[', ']', array_token);
+    auto n_elements = count_outer_element_until_end(',', "[{", "]}", array_token) + 1;
 
     if constexpr (metap::is_detected<metap::resizable, T>{}) {
       dst.resize(n_elements);
@@ -321,37 +363,44 @@ auto deserialize(std::string_view& src, T& dst) {
         return deserialize_result::mismatched_type;
       }
     }
+    assert(n_elements == dst.size());
 
     for (unsigned index = 0; index < n_elements; index++) {
-
-      auto token = scan_outer_element_until(',', '[', ']', array_token);
+      auto token = scan_outer_element_until(',', "[{", "]}", array_token);
+      array_token.remove_prefix(token.size());
       if (auto result = deserialize(token, dst[index]); result != deserialize_result::success) {
         return result;
       }
-      // remove 1 for the comma (or ] if we're the last one)
-      array_token.remove_prefix(token.size() + 1);
+      if (array_token[0] == ',') {
+        array_token.remove_prefix(1);
+      }
     }
 
     src.remove_prefix(array_token.size());
+    return deserialize_result::success;
 #if USING_REFLEXPR
   } else if constexpr (meta::Record<reflexpr(T)>) {
     using MetaT = reflexpr(T);
 #elif USING_CPP3K
   } else if constexpr (refl::is_member_type<T>()) {
 #endif
-    if (src[0] != '{') {
+    auto stripped = strip_whitespace(src);
+    std::cout << "stripped: [" << stripped << "]\n";
+    if (stripped[0] != '{') {
+      std::cout << "got malformed token when { was expected: " << stripped << "\n";
       return deserialize_result::malformed_input;
     }
-    auto object_end = scan_for_end_token('{', '}', src);
-    if (object_end == src.size()) {
+    auto object_end = scan_for_end_token('{', '}', stripped);
+    if (object_end == stripped.size()) {
       return deserialize_result::mismatched_token;
     }
-    auto object_token = src.substr(1, object_end);
+    auto object_token = stripped.substr(1, object_end);
 
-    auto n_colons = count_outer_element_until_end(':', '{', '}', object_token);
-    auto n_commas = count_outer_element_until_end(',', '{', '}', object_token);
+    auto n_colons = count_outer_element_until_end(':', "{[", "}]", object_token);
+    auto n_commas = count_outer_element_until_end(',', "{[", "}]", object_token);
 
     if (n_colons != n_commas + 1) {
+      std::cout << "n_colons (" << n_colons << ") != n_commas (" << n_commas << ") in: " << object_token << "\n";
       return deserialize_result::malformed_input;
     }
 
@@ -376,11 +425,10 @@ auto deserialize(std::string_view& src, T& dst) {
       key_index = std::find(object_token.begin(), object_token.end(), ':') - object_token.begin();
       object_token.remove_prefix(key_index + 1);
 
-      auto value_index = std::find(object_token.begin(), object_token.end(), ',') - object_token.begin();
-      auto value_token = object_token.substr(0, value_index);
+      auto value_token = scan_outer_element_until(',', "{[", "}]", object_token);
+      auto value_index = value_token.size();
       object_token.remove_prefix(value_index);
 
-      // TODO propagate return value!
 #if USING_REFLEXPR
       meta::for_each<meta::get_data_members_m<MetaT>>(
         [&dst, &key, &value_token, &result](auto&& metainfo) {
@@ -388,7 +436,8 @@ auto deserialize(std::string_view& src, T& dst) {
           constexpr auto name = meta::get_base_name_v<MetaInfo>;
           if (key == name) {
             constexpr auto p = refl::get_member_pointer<T>(sl::string_constant<name>{});
-            if (result = deserialize(value_token, dst.*p); result != deserialize_result::success) {
+            if (result = deserialize(value_token, dst.*p);
+                result != deserialize_result::success) {
               return;
             }
           }
@@ -398,8 +447,8 @@ auto deserialize(std::string_view& src, T& dst) {
     meta::for_each($T.member_variables(),
       [&dst, &key, &value_token, &result](auto&& member) {
         if (key == member.name()) {
-          // constexpr auto p = member.pointer();
-          if (result = deserialize(value_token, dst.*member.pointer()); result != deserialize_result::success) {
+          if (result = deserialize(value_token, dst.*member.pointer());
+              result != deserialize_result::success) {
             return;
           }
         }

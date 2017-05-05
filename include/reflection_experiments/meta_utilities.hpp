@@ -23,10 +23,14 @@ using iterable = std::void_t<
   decltype(std::declval<T>().begin()), decltype(std::declval<T>().end())>;
 
 template<typename T>
-using resizable = decltype(std::declval<T>().resize());
+using resizable = decltype(std::declval<T>().resize(std::declval<size_t>()));
+// ???
+// using resizable = decltype(std::declval<T>().resize(std::declval<T::size_type>()));
 
 template<typename T>
-using has_tuple_size = std::tuple_size<T>;
+using has_tuple_size = decltype(std::tuple_size<T>::value);
+// TODO I want this to be like this but I think it might be a bug
+// using has_tuple_size = std::tuple_size<T>;
 
 template<typename T>
 using equality_comparable = decltype(std::declval<T>() == std::declval<T>());
