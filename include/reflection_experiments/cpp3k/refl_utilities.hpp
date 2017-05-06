@@ -35,13 +35,8 @@ static constexpr bool has_member(StrT&& key) {
 }
 
 template<typename S, typename Member>
-struct unreflect_member {
-  using type = std::decay_t<
+using unreflect_member_t = typename std::decay_t<
     decltype(std::declval<S>().*(std::decay_t<Member>::pointer()))>;
-};
-
-template<typename S, typename Member>
-using unreflect_member_t = typename unreflect_member<S, Member>::type;
 
 }  // namespace refl_utilities
 }  // namespace jk

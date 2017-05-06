@@ -26,7 +26,6 @@ namespace meta = cpp3k::meta;
 #endif
 namespace refl = jk::refl_utilities;
 namespace metap = jk::metaprogramming;
-namespace sl = jk::string_literal;
 
 enum struct scan_result {
   continue_scanning,
@@ -428,7 +427,7 @@ auto deserialize(std::string_view& src, T& dst) {
           using MetaInfo = std::decay_t<decltype(metainfo)>;
           constexpr auto name = meta::get_base_name_v<MetaInfo>;
           if (key == name) {
-            constexpr auto p = refl::get_member_pointer<T>(sl::string_constant<name>{});
+            constexpr auto p = refl::get_member_pointer<T, name>();
             if (result = deserialize(value_token, dst.*p);
                 result != deserialize_result::success) {
               return;
