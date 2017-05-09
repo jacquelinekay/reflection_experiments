@@ -128,9 +128,9 @@ namespace reflopt {
 
     static auto set(OptionsStruct& options, const char* prefix, const char* value) {
       hana::for_each(hana::keys(prefix_map),
-        [&options, &prefix, &value](auto&& key) {
+        [&options, &prefix, &value](const auto& key) {
           if (runtime_string_compare(key, prefix)) {
-            constexpr auto info = hana::at_key(prefix_map, std::decay_t<decltype(key)>{});
+            constexpr auto info = hana::at_key(prefix_map, decltype(key){});
 #if USING_REFLEXPR
             using MetaInfo = std::decay_t<decltype(info)>;
             constexpr auto member_pointer = meta::get_pointer<MetaInfo>::value;
