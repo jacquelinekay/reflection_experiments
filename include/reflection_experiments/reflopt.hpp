@@ -1,9 +1,9 @@
 #pragma once
 
 #include <boost/hana/at_key.hpp>
-#include <boost/hana/filter.hpp>
 #include <boost/hana/fold.hpp>
 #include <boost/hana/for_each.hpp>
+#include <boost/hana/plus.hpp>
 #include <boost/hana/map.hpp>
 #include <boost/hana/string.hpp>
 #include <boost/hana/tuple.hpp>
@@ -15,12 +15,7 @@
 #include "refl_utilities.hpp"
 #include "meta_utilities.hpp"
 
-#include <vrm/pp/arg_count.hpp>
-#include <vrm/pp/cat.hpp>
-
 #include <boost/hana/length.hpp>
-
-#include <iostream>
 
 #if USING_REFLEXPR
 #elif USING_CPP3K
@@ -35,6 +30,7 @@ namespace reflopt {
   namespace refl = jk::refl_utilities;
   namespace metap = jk::metaprogramming;
   namespace hana = boost::hana;
+  using namespace hana::literals;
 
   template<typename T>
   using optional_t = std::experimental::optional<T>;
@@ -47,85 +43,52 @@ namespace reflopt {
 
 #if USING_REFLEXPR
   namespace meta = std::meta;
-  template<typename MetaT>
-  struct index_metainfo_helper {
-    template<typename Id, size_t I, size_t ...J>
-    static constexpr bool equals_member(std::index_sequence<J...>&&) {
-      return ((Id{}[hana::size_c<J>] == meta::get_base_name_v<
-                  meta::get_element_m<
-                    meta::get_data_members_m<MetaT>,
-                    I
-                  >
-                >[J]) && ...);
-    }
-
-    template<typename Id, size_t ...Index>
-    static constexpr auto apply(Id&&, std::index_sequence<Index...>) {
-      return ((equals_member<Id, Index>(
-               std::make_index_sequence<hana::length(Id{})>{}) ? Index : 0) + ...);
-    }
-  };
-
-  template<typename T, typename Id>
-  static constexpr auto get_metainfo_for(Id&&) {
-    using MetaT = reflexpr(T);
-    constexpr auto index = index_metainfo_helper<MetaT>::apply(Id{},
-        std::make_index_sequence<refl::n_fields<T>{}>{});
-    return meta::get_element_m<meta::get_data_members_m<MetaT>, index>{};
-  }
-#elif USING_CPP3K
-  namespace meta = cpp3k::meta;
-  template<typename T, typename Id, size_t I, size_t ...J>
-  static constexpr bool equals_member(std::index_sequence<J...>&&) {
-    return ((Id{}[hana::size_c<J>] ==
-             cpp3k::meta::cget<I>($T.member_variables()).name()[J]) && ...);
+  template<typename T, size_t... I>
+  static constexpr auto get_name_helper(std::index_sequence<I...>) {
+    return hana::string_c<meta::get_base_name_v<T>[I]...>;
   }
 
   template<typename T>
-  struct get_matching_index {
-    template<typename Id, std::size_t ...I>
-    static constexpr std::size_t apply(Id&& id, std::index_sequence<I...>) {
-      constexpr auto N = hana::length(Id{});
-      return ((equals_member<T, Id, I>(
-               std::make_index_sequence<N>{}) ? I : 0) + ...);
-    }
-  };
+  static constexpr auto get_name() {
+    constexpr auto L = metap::cstrlen(meta::get_base_name_v<T>);
+    return get_name_helper<T>(std::make_index_sequence<L>{});
+  }
+#elif USING_CPP3K
+  namespace meta = cpp3k::meta;
 
-  template<typename T, typename Id>
-  static constexpr auto get_metainfo_for(Id&& id) {
-    constexpr auto N = $T.member_variables().size();
-    constexpr auto I = get_matching_index<T>::apply(Id{}, std::make_index_sequence<N>{});
-    return cpp3k::meta::cget<I>($T.member_variables());
+  template<typename T, size_t... I>
+  static constexpr auto get_name_helper(std::index_sequence<I...>) {
+    return hana::string_c<T::name()[I]...>;
+  }
+
+  template<typename T>
+  static constexpr auto get_name() {
+    constexpr auto L = metap::cstrlen(T::name());
+    return get_name_helper<T>(std::make_index_sequence<L>{});
   }
 #endif
 
-  template<typename Id, typename Flag, typename ShortFlag, typename Help>
-  struct Option
-  {
-    static constexpr Id identifier;
-    static constexpr Flag flag;
-    static constexpr ShortFlag short_flag;
-    static constexpr Help help;
-  };
-
   template<typename OptionsStruct>
   struct OptionsMap {
-    static constexpr auto collect_flags = [](auto&& x, auto&& field) {
-#if USING_REFLEXPR
-      using T = UNWRAP_TYPE(field);
-#elif USING_CPP3K
-      using T = refl::unreflect_member_t<OptionsStruct, decltype(field)>;
-#endif
-      auto result = hana::insert(
-          x, hana::make_pair(T::flag,
-            get_metainfo_for<OptionsStruct>(T::identifier)));
-      if constexpr(!hana::is_empty(T::short_flag)) {
-        return hana::insert(
-          result, hana::make_pair(T::short_flag,
-            get_metainfo_for<OptionsStruct>(T::identifier)));
-      } else {
-        return result;
-      }
+    static constexpr auto collect_flags = [](auto&& flag_map, auto&& field) {
+      using T = std::decay_t<decltype(field)>;
+
+      constexpr auto field_name = get_name<T>();
+      using FlagMap = std::decay_t<decltype(flag_map)>;
+      constexpr auto flag = "--"_s + field_name;
+      constexpr auto result = hana::insert(FlagMap{}, hana::make_pair(flag, T{}));
+      using Result = std::decay_t<decltype(result)>;
+
+      constexpr auto prefix = hana::drop_while(field_name,
+        [](auto elem) {
+          return hana::contains(Result{}, "-"_s + hana::string_c<elem>);
+        }
+      );
+
+      static_assert(!hana::is_empty(prefix), "Couldn't find unique short flag.");
+
+      return hana::insert(result,
+          hana::make_pair("-"_s + hana::string_c<hana::front(prefix)>, T{}));
     };
 
 #if USING_REFLEXPR
@@ -133,17 +96,8 @@ namespace reflopt {
     template<typename... MetaFields>
     struct make_prefix_map {
       static constexpr auto helper() {
-        auto filtered = hana::filter(
-          hana::make_tuple(hana::type_c<refl::unreflect_type<MetaFields>>...),
-          [](auto&& field) {
-            return hana::bool_c<
-              metap::is_specialization<std::decay_t<UNWRAP_TYPE(field)>, Option>{}>;
-          }
-        );
-        static_assert(!hana::length(filtered) == hana::size_c<0>,
-            "No options found. Did you define options with the REFLOPT_OPTION macro?");
         return hana::fold(
-          filtered,
+          hana::make_tuple(MetaFields{}...),
           hana::make_map(),
           collect_flags
         );
@@ -154,18 +108,8 @@ namespace reflopt {
       meta::get_data_members_m<MetaOptions>, make_prefix_map>::helper();
 
 #elif USING_CPP3K
-    static constexpr auto filtered = hana::filter(
-        refl::adapt_to_hana($OptionsStruct.member_variables()),
-        [](auto&& field) {
-          using T = refl::unreflect_member_t<
-            OptionsStruct, std::decay_t<decltype(field)>>;
-          return hana::bool_c<metap::is_specialization<T, Option>{}>;
-        }
-      );
-    static_assert(!hana::length(filtered) == hana::size_c<0>,
-        "No options found. Did you define options with the REFLOPT_OPTION macro?");
     static constexpr auto prefix_map = hana::fold(
-      filtered,
+      refl::adapt_to_hana($OptionsStruct.member_variables()),
       hana::make_map(),
       collect_flags
     );
@@ -222,38 +166,4 @@ namespace reflopt {
     return options;
   }
 
-template<size_t N>
-struct hana_string_from_literal {
-  static constexpr auto apply(const char (&literal)[N]) {
-    return apply_helper(literal, std::make_index_sequence<N>{});
-  }
-
-  template<size_t ...I>
-  static constexpr auto apply_helper(const char (&literal)[N], std::index_sequence<I...>&&) {
-    return hana::string_c<literal[I]...>;
-  }
-};
-
 }  // namespace reflopt
-
-
-#define BOOST_HANA_STRING_T(Literal) \
-  decltype(Literal ## _s)
-
-#define REFLOPT_OPTION_HELPER(Type, Identifier, Flag, ShortFlag, Help) \
-  reflopt::Option<BOOST_HANA_STRING_T(#Identifier), BOOST_HANA_STRING_T(Flag), \
-      BOOST_HANA_STRING_T(ShortFlag), BOOST_HANA_STRING_T(Help)> \
-    reflopt_ ## Identifier ## _tag; \
-  Type Identifier
-
-#define REFLOPT_OPTION_3(Type, Identifier, Flag) \
-  REFLOPT_OPTION_HELPER(Type, Identifier, Flag, "", "")
-
-#define REFLOPT_OPTION_4(Type, Identifier, Flag, ShortFlag) \
-  REFLOPT_OPTION_HELPER(Type, Identifier, Flag, ShortFlag, "")
-
-#define REFLOPT_OPTION_5(Type, Identifier, Flag, ShortFlag, Help) \
-  REFLOPT_OPTION_HELPER(Type, Identifier, Flag, ShortFlag, Help)
-
-#define REFLOPT_OPTION(...) \
-  VRM_PP_CAT(REFLOPT_OPTION_, VRM_PP_ARGCOUNT(__VA_ARGS__))(__VA_ARGS__) \

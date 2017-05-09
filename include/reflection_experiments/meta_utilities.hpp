@@ -38,8 +38,15 @@ using equality_comparable = decltype(std::declval<T>() == std::declval<T>());
 template<template<typename ...> typename Op, typename... Args>
 using is_detected = std::experimental::is_detected<Op, Args...>;
 
-// Unwrap type from hana::type_c
-#define UNWRAP_TYPE(TypeWrapper) typename std::decay_t<decltype(TypeWrapper)>::type
+static constexpr unsigned cstrlen(const char* str) {
+  return *str ? 1 + cstrlen(str + 1) : 0;
+}
+
+// thx superv
+#define CONSTEXPR_ERROR(Message) \
+  [](auto x) { \
+    static_assert(decltype(x){}, Message); \
+  }(std::false_type{}); \
 
 }  // namespace metaprogramming
 }  // namespace jk

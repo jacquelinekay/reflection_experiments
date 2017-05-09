@@ -21,12 +21,6 @@ else()
   message(FATAL_ERROR "No reflection fork was specified. Unable to build targets using reflection.")
 endif()
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/extlibs/vrm_cmake/cmake/")
-include(vrm_cmake)
-
-# Find `vrm_pp`:
-vrm_cmake_find_extlib(vrm_pp)
-
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/extlibs/hana/cmake/")
 set(Hana_ROOT "${CMAKE_SOURCE_DIR}/extlibs/hana")
 find_package(Hana)

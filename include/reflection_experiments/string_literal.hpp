@@ -29,7 +29,6 @@ static constexpr unsigned length(const char* str) {
   return *str ? 1 + length(str + 1) : 0;
 }
 
-
 template<auto V>
 struct string_constant {
   static constexpr auto value() {

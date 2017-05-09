@@ -5,16 +5,10 @@
 #include <iostream>
 #include <boost/hana/string.hpp>
 
-#ifndef BOOST_HANA_CONFIG_ENABLE_STRING_UDL
-static_assert(false, "reflopt example won't work without Hana string literals enabled");
-#endif
-
-using namespace boost::hana::literals;
-
 struct ProgramOptions {
-  REFLOPT_OPTION(std::string, filename, "--filename");
-  REFLOPT_OPTION(int, iterations, "--iterations", "-i", "Number of times to run the algorithm.") = 100;
-  REFLOPT_OPTION(bool, help, "--help", "-h", "Print help and exit");
+  std::string filename;
+  int iterations = 100;
+  bool help = false;
 };
 
 int main(int argc, char** argv) {
