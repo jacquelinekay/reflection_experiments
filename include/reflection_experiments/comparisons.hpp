@@ -19,14 +19,15 @@ bool equal(const T& a, const T& b) {
   if constexpr (metap::is_detected<metap::equality_comparable, T>{}) {
     return a == b;
   } else if constexpr (metap::is_detected<metap::iterable, T>{}) {
-    bool equals = true;
     if (a.size() != b.size()) {
       return false;
     }
     for (int i = 0; i < a.size(); ++i) {
-      equals &= equal(a[i], b[i]);
+      if (!equal(a[i], b[i])) {
+        return false;
+      }
     }
-    return equals;
+    return true;
   } else {
 #if USING_REFLEXPR
     using MetaT = reflexpr(T);
@@ -37,7 +38,7 @@ bool equal(const T& a, const T& b) {
       [&a, &b, &result](auto&& member) {
         using MetaMember = typename std::decay_t<decltype(member)>;
         constexpr auto p = meta::get_pointer<MetaMember>::value;
-        result &= equal(a.*p, b.*p);
+        result = result && equal(a.*p, b.*p)
       }
     );
     return result;
@@ -45,7 +46,7 @@ bool equal(const T& a, const T& b) {
     bool result = true;
     meta::for_each($T.member_variables(),
       [&a, &b, &result](auto&& member){
-        result &= equal(a.*member.pointer(), b.*member.pointer());
+        result = result && equal(a.*member.pointer(), b.*member.pointer());
       }
     );
     return result;
