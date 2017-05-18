@@ -33,3 +33,7 @@ if(ENABLE_TESTING)
   include(CTest)
   add_subdirectory(test)
 endif()
+
+if(DEFINED BUILD_BENCHMARKS)
+  add_subdirectory(benchmarks)
+endif()

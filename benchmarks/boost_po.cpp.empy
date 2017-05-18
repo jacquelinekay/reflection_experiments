@@ -1,0 +1,23 @@
+#include <boost/program_options.hpp>
+#include <iostream>
+
+namespace po = boost::program_options;
+
+int main(int argc, char** argv) {
+  po::options_description desc("");
+  desc.add_options()
+@[for name in arguments ]
+      ("@(name)", po::value<int>(), "")
+@[end for]
+  ;
+
+  po::variables_map vm;
+  po::store(po::command_line_parser(argc, argv).options(desc).run(), vm);
+  po::notify(vm);
+
+@[for name in arguments ]
+  std::cout << vm["@(name)"].as<int>() << "\n";
+@[end for]
+
+  return 0;
+}

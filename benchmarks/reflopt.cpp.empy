@@ -1,13 +1,10 @@
-/* Demo: Specify a struct for command line arguments
- * */
-
 #include "reflopt.hpp"
 #include <iostream>
 
 struct ProgramOptions {
-  std::string filename;
-  int iterations = 100;
-  bool help = false;
+@[for name in arguments ]
+  int @(name);
+@[end for]
 };
 
 int main(int argc, char** argv) {
@@ -17,8 +14,9 @@ int main(int argc, char** argv) {
     return -1;
   }
 
-  std::cout << args->filename << "\n";
-  std::cout << args->iterations << "\n";
+@[for name in arguments ]
+  std::cout << args->@(name) << "\n";
+@[end for]
 
   return 0;
 }

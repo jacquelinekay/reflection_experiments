@@ -15,7 +15,8 @@ constexpr auto adapt_to_hana_helper(const T& t, std::index_sequence<I...>&&) {
 }
 
 template<typename T>
-constexpr auto adapt_to_hana(const T& t) {
+constexpr auto adapt_to_hana(T&& t) {
+  // return std::apply(hana::make_tuple, std::forward<T>(t));
   return adapt_to_hana_helper(t, std::make_index_sequence<T::size()>{});
 }
 

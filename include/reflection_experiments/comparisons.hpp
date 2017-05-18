@@ -38,7 +38,7 @@ bool equal(const T& a, const T& b) {
       [&a, &b, &result](auto&& member) {
         using MetaMember = typename std::decay_t<decltype(member)>;
         constexpr auto p = meta::get_pointer<MetaMember>::value;
-        result = result && equal(a.*p, b.*p)
+        result = result && equal(a.*p, b.*p);
       }
     );
     return result;
